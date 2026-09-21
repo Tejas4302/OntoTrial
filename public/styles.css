@@ -44,3 +44,16 @@
 .metric-governance-grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:16px}.metric-definition{border:1px solid #e2e9ec;border-radius:16px;padding:20px;background:#fbfcfc}.metric-definition h3{margin:6px 0 8px}.metric-definition p{margin:0 0 10px;color:#5f727c;line-height:1.55}
 .governance-flow{display:flex;gap:12px;align-items:center;flex-wrap:wrap}.governance-flow span{padding:10px 14px;border-radius:999px;background:#f2f7f6;border:1px solid #dfe9e6;font-weight:700;color:#214a53}
 @media(max-width:980px){.persona-grid{grid-template-columns:1fr}.metric-governance-grid{grid-template-columns:1fr}.governance-callout{align-items:flex-start;flex-direction:column}.canonical-chip{min-width:0;width:100%}}
+
+/* v1.4.1 — crisp, unclipped OntoTrail brand lockup */
+.sidebar{width:236px;padding-top:22px}
+.main-wrap{margin-left:236px}
+.brand{display:flex;align-items:center;gap:12px;min-height:64px;padding:8px 8px 10px;margin-bottom:28px;overflow:visible}
+.brand-logo-mark{display:block;width:42px!important;height:42px!important;object-fit:contain!important;object-position:center!important;flex:0 0 42px;overflow:visible}
+.brand-wordmark{display:block;font-size:25px!important;line-height:1!important;font-weight:760!important;letter-spacing:-.9px!important;color:#f7fbff!important;white-space:nowrap}
+.entry-brand{gap:11px;overflow:visible}
+.entry-brand img{display:block;width:38px!important;height:38px!important;object-fit:contain!important;object-position:center!important;overflow:visible}
+.entry-brand-name{font-size:23px;line-height:1;font-weight:760;white-space:nowrap}
+.platform-top .entry-brand img{width:34px!important;height:34px!important}
+.platform-top .entry-brand-name{font-size:20px}
+@media(max-width:760px){.sidebar{width:236px}.main-wrap{margin-left:0}.brand-logo-mark{width:40px!important;height:40px!important;flex-basis:40px}.brand-wordmark{font-size:24px!important}.entry-brand img{width:34px!important;height:34px!important}.entry-brand-name{font-size:21px}}

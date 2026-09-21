@@ -16,8 +16,8 @@
     },
     {
       "path": "assets/ontotrail-mark.png",
-      "bytes": 12134,
-      "sha256": "cecf17e4d5a0e77f465c8de1287a285209d9e49dbe6f9fb4f1209f553a093c24"
+      "bytes": 172728,
+      "sha256": "2451909ba5c4a6bcc928a45f42ae51335e4a4dd88d1fafd9dbfbd19aadc7f28d"
     },
     {
       "path": "index.html",
@@ -32,7 +32,7 @@
     {
       "path": "src/config.js",
       "bytes": 376,
-      "sha256": "66cc1827b1d9b13568cbeb9e3d23ef8a072fa99404db385707f961f01880c8c3"
+      "sha256": "d836aa5280edc92933d0d46234e77a367192bb88b521d342f99ca97b79dd4e70"
     },
     {
       "path": "src/domain/assistant.js",
@@ -101,8 +101,8 @@
     },
     {
       "path": "styles.css",
-      "bytes": 52261,
-      "sha256": "97c2b4bf60c9b03a4fab2d4d96b56cf8bd07b8eb3ba2023694ffab387b2c2b9b"
+      "bytes": 53540,
+      "sha256": "e46ea2167b633ae7eae90668d1337143edb0da8aed2d35ce360e0b1838c4690f"
     }
   ]
 }
