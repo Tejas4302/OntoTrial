@@ -47,17 +47,36 @@ function sourceRecord(id){
 }
 function saveDialog(){if(saved.length>=APP.maxSaved){toast('You have 20 saved scenarios. Delete one before saving another.');return;}openDetail(`<div class="dialog-head"><h2 id="detail-title">Save this scenario</h2><button class="icon-button" data-close="detail-dialog" aria-label="Close">${icon('close')}</button></div><form id="save-form" class="detail-body"><p>Keep these assumptions on this browser. Export a JSON file for a portable copy.</p><label class="field-label" for="scenario-name">Scenario name</label><input id="scenario-name" class="text-input" name="name" required maxlength="80" placeholder="e.g. Aruna delay with recovery" autofocus><p class="helper">${e(scenarioSummary(scenario,d))}</p><div class="form-actions"><button type="button" class="secondary" data-close="detail-dialog">Cancel</button><button class="primary">Save scenario</button></div></form>`);$('#scenario-name').focus();}
 function exportScenario(s=scenario,name='OntoTrail scenario'){downloadFile('ontotrail-scenario.json',JSON.stringify(scenarioFile(s,d,name),null,2));toast('Scenario exported as JSON.');}
+
+function analystNumber(value){const n=Number(value);return Number.isFinite(n)?n:null;}
+function analystFormat(column,value){const n=analystNumber(value);if(n===null)return e(value??'—');const key=String(column).toUpperCase();if(/INR|EXPOSURE|VALUE|REVENUE|COST|PREMIUM|AMOUNT/.test(key))return `₹${new Intl.NumberFormat('en-IN',{maximumFractionDigits:0}).format(n)}`;return new Intl.NumberFormat('en-IN',{maximumFractionDigits:2}).format(n);}
+function analystLabel(column){return String(column).replaceAll('_',' ').toLowerCase().replace(/\b\w/g,c=>c.toUpperCase());}
+function analystModel(result){
+ const columns=result?.columns||[],rows=result?.rows||[];const numeric=columns.filter(c=>rows.some(r=>analystNumber(r[c])!==null));const dimensions=columns.filter(c=>!numeric.includes(c));
+ const metric=numeric.find(c=>/EXPOSURE|VALUE|REVENUE|COST|AMOUNT|COUNT|QUANTITY|UNITS|DAYS|RATE|PERCENT/.test(String(c).toUpperCase()))||numeric[0];
+ const dimension=dimensions.find(c=>!/SCENARIO/.test(String(c).toUpperCase()))||dimensions[0];return {columns,rows,numeric,dimensions,metric,dimension};
+}
+function analystNarrative(question,result){
+ const m=analystModel(result);if(!m.rows.length)return 'No matching records were returned for this question.';
+ if(m.metric&&m.dimension){const sorted=[...m.rows].filter(r=>analystNumber(r[m.metric])!==null).sort((a,b)=>analystNumber(b[m.metric])-analystNumber(a[m.metric]));if(sorted.length){const top=sorted[0];const second=sorted[1];return `${e(top[m.dimension]??'The leading result')} has the highest ${e(analystLabel(m.metric).toLowerCase())} at <strong>${analystFormat(m.metric,top[m.metric])}</strong>${second?`, followed by ${e(second[m.dimension])} at <strong>${analystFormat(m.metric,second[m.metric])}</strong>`:''}.`;}}
+ if(m.metric&&m.rows.length===1)return `The result is <strong>${analystFormat(m.metric,m.rows[0][m.metric])}</strong>.`;
+ return `I found <strong>${m.rows.length}</strong> matching records for your question.`;
+}
+function analystFilters(result,id){const m=analystModel(result);const dims=m.dimensions.filter(c=>new Set(m.rows.map(r=>String(r[c]??''))).size>1).slice(0,3);if(!dims.length)return '';return `<div class="analyst-filters" data-result-id="${id}">${dims.map(c=>{const vals=[...new Set(m.rows.map(r=>String(r[c]??'')).filter(Boolean))].sort();return `<label>${e(analystLabel(c))}<select data-analyst-filter="${e(c)}"><option value="">All</option>${vals.map(v=>`<option>${e(v)}</option>`).join('')}</select></label>`}).join('')}</div>`;}
+function analystTable(result,id){const m=analystModel(result);if(!m.rows.length)return '';return `<div class="analyst-table-wrap"><table class="analyst-table" data-analyst-table="${id}"><thead><tr>${m.columns.map(c=>`<th>${e(analystLabel(c))}</th>`).join('')}</tr></thead><tbody>${m.rows.slice(0,50).map(r=>`<tr>${m.columns.map(c=>`<td data-col="${e(c)}" data-raw="${e(r[c]??'')}">${analystFormat(c,r[c])}</td>`).join('')}</tr>`).join('')}</tbody></table></div>`;}
+function analystChart(result,id){const m=analystModel(result);if(!m.metric||!m.dimension)return '';const items=m.rows.map(r=>({label:String(r[m.dimension]??''),value:analystNumber(r[m.metric]),scenario:m.dimensions.includes('SCENARIO')?String(r.SCENARIO??''):''})).filter(x=>x.label&&x.value!==null).sort((a,b)=>b.value-a.value).slice(0,10);if(items.length<2)return '';const max=Math.max(...items.map(x=>Math.abs(x.value)),1);return `<section class="analyst-viz" data-analyst-chart="${id}"><div class="viz-head"><div><span class="eyebrow">DYNAMIC VISUALIZATION</span><strong>${e(analystLabel(m.metric))} by ${e(analystLabel(m.dimension))}</strong></div><span>${items.length} shown</span></div><div class="bar-chart">${items.map(x=>`<div class="bar-row" data-chart-label="${e(x.label)}"><span title="${e(x.label)}">${e(x.label)}</span><div class="bar-track"><i style="width:${Math.max(2,Math.abs(x.value)/max*100).toFixed(1)}%"></i></div><b>${analystFormat(m.metric,x.value)}</b></div>`).join('')}</div></section>`;}
+function applyAnalystFilters(container){const selects=[...container.querySelectorAll('[data-analyst-filter]')];const table=container.querySelector('[data-analyst-table]');if(!table)return;for(const tr of table.tBodies[0].rows){const show=selects.every(sel=>!sel.value||[...tr.cells].some(td=>td.dataset.col===sel.dataset.analystFilter&&td.dataset.raw===sel.value));tr.hidden=!show;}const visible=new Set([...table.tBodies[0].rows].filter(r=>!r.hidden).map(r=>[...r.cells][0]?.dataset.raw));container.querySelectorAll('[data-chart-label]').forEach(row=>{if(selects.length)row.hidden=false;});}
+
 function showAssistant(){if($('#detail-dialog').open)$('#detail-dialog').close();$('#assistant-dialog').showModal();$('#question').focus();}
 async function ask(q){
  const question=q.trim();if(!question)return;if(!$('#assistant-dialog').open)showAssistant();if(!chatCount)$('#chat-log').replaceChildren();
  const block=document.createElement('article');block.className='chat-pair';block.innerHTML=`<p class="user-question">${e(question)}</p><div class="assistant-answer"><div class="answer-heading">${icon('chat')}<strong>Asking Snowflake Cortex Analyst…</strong></div><p>Grounding your question in the OntoTrail semantic view.</p></div>`;$('#chat-log').append(block);chatCount++;$('#question').value='';$('#question').disabled=true;$('#ask-form button').disabled=true;$('#chat-log').scrollTop=$('#chat-log').scrollHeight;
  try{
-  const a=await askAnalyst(question);const answerText=a.text|| (a.result?.rows?.length?'Cortex Analyst generated and executed the query below.':'Cortex Analyst processed the question.');
-  const table=a.result?.rows?.length?`<div class="analyst-table-wrap"><table class="analyst-table"><thead><tr>${a.result.columns.map(c=>`<th>${e(c)}</th>`).join('')}</tr></thead><tbody>${a.result.rows.slice(0,20).map(r=>`<tr>${a.result.columns.map(c=>`<td>${e(r[c]??'')}</td>`).join('')}</tr>`).join('')}</tbody></table></div>`:'';
-  const sql=a.sql?`<details class="analyst-sql"><summary>View generated SQL</summary><pre>${e(a.sql)}</pre></details>`:'';
+  const a=await askAnalyst(question);const rid=`analyst-${Date.now()}`;const resultHtml=a.result?.rows?.length?`${analystFilters(a.result,rid)}${analystChart(a.result,rid)}${analystTable(a.result,rid)}`:'';
+  const sql=a.sql?`<details class="analyst-sql"><summary>Audit trail · View generated SQL</summary><pre>${e(a.sql)}</pre></details>`:'';
   const warning=a.executionWarning?`<p class="analyst-warning">${e(a.executionWarning)}</p>`:'';
-  const suggestions=a.suggestions?.length?`<div class="analyst-suggestions">${a.suggestions.map(s=>`<button type="button" data-question="${e(s)}">${e(s)}</button>`).join('')}</div>`:'';
-  block.querySelector('.assistant-answer').innerHTML=`<div class="answer-heading">${icon('chat')}<strong>Snowflake Cortex Analyst</strong></div><p>${e(answerText)}</p>${table}${warning}${sql}${suggestions}<small>Live answer · ${e(a.requestId||'Snowflake')}</small>`;
+  const suggestions=a.suggestions?.length?`<div class="analyst-suggestions"><span>Explore next</span>${a.suggestions.map(s=>`<button type="button" data-question="${e(s)}">${e(s)}</button>`).join('')}</div>`:'';
+  block.querySelector('.assistant-answer').innerHTML=`<div class="answer-heading">${icon('chat')}<strong>OntoTrail Intelligence</strong><span class="live-pill">LIVE · SNOWFLAKE CORTEX</span></div><p class="direct-answer">${analystNarrative(question,a.result||{columns:[],rows:[]})}</p>${resultHtml}${warning}${sql}${suggestions}<small>Grounded in ONTOTRAIL_ANALYST · Request ${e(a.requestId||'Snowflake')}</small>`;
  }catch(err){
   const local=answer(question,d,result);block.querySelector('.assistant-answer').innerHTML=`<div class="answer-heading">${icon('chat')}<strong>Local fallback · ${e(local.title)}</strong></div><p>${e(local.text)}</p>${evidenceButtons(local.ids)}<small>Cortex Analyst unavailable: ${e(err.message||'connection error')}</small>`;
  }finally{$('#question').disabled=false;$('#ask-form button').disabled=false;$('#question').focus();$('#chat-log').scrollTop=$('#chat-log').scrollHeight;}
@@ -107,6 +126,7 @@ document.addEventListener('input',event=>{const t=event.target;
 });
 document.addEventListener('change',async event=>{const t=event.target;
  try{
+  if(t.dataset.analystFilter){applyAnalystFilters(t.closest('.assistant-answer'));return;}
   if(t.dataset.filter){ui[t.dataset.filter]=t.value;ui.page=1;render();}
   if(t.id==='recovery-switch'){draft.recovery=t.checked;previewDraft();}
   if(t.id==='buffer-days'){draft.bufferDays=Number(t.value);previewDraft();}

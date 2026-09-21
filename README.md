@@ -38,8 +38,6 @@ Do not upload `node_modules/`, `test-results/`, credentials, or real customer da
 
 Configuration reference: [Vercel project configuration](https://vercel.com/docs/project-configuration/vercel-json).
 
-Deployment trigger for Cortex integration.
-
 ## What you can do
 
 | Workspace | Function |
@@ -103,3 +101,11 @@ No deployment URL or GitHub repository has been created by this handoff. You own
 ## Live Snowflake Cortex Analyst integration
 
 The Vercel deployment can call Cortex Analyst through `POST /api/analyst`. Configure these Vercel environment variables: `SNOWFLAKE_PAT` (Secret), `SNOWFLAKE_ACCOUNT_URL`, `SNOWFLAKE_SEMANTIC_VIEW`, and `SNOWFLAKE_WAREHOUSE`. Never commit the PAT. The server bridge asks Cortex Analyst for grounded SQL and executes only generated read-only `SELECT`/`WITH` statements through Snowflake SQL API.
+
+## CoCo CLI Hackathon demo tenant (v1.2)
+
+The jury-facing prototype now includes a dedicated synthetic tenant and role preview. Client demo credentials are `jury@cococli.demo` / `CoCo2026!`. The admin preview is `admin@ontotrail.demo` / `OntoTrail2026!`. These are intentionally public prototype credentials stored client-side and must never be reused for production authentication or connected to privileged backend actions.
+
+Ask OntoTrail now suppresses Cortex's interpretation preamble and presents a direct business answer, formatted INR values, a dynamic bar visualization, result filters, a detailed table, follow-up suggestions and a collapsed generated-SQL audit trail.
+
+To expand the live Cortex dataset, run `snowflake/01_coco_cli_demo_dataset.sql` in Snowsight. It creates 72 synthetic base orders × 3 governed scenarios (216 analytical rows) across 12 suppliers, 8 customers, 12 products and 4 plants, then replaces `ONTOTRAIL.SUPPLY_CHAIN.ONTOTRAIL_ANALYST` with a semantic view over that dataset. Review the script before running it because `CREATE OR REPLACE SEMANTIC VIEW` replaces the current semantic view definition.

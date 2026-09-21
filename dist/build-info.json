@@ -21,8 +21,8 @@
     },
     {
       "path": "src/app.js",
-      "bytes": 20412,
-      "sha256": "a4845f13409bab55579b5c33f4be5974a4d5c0302b0806f775c2501d5cc031ec"
+      "bytes": 24974,
+      "sha256": "8d253271e50bc8778e5175b86559f41fbfbbb9c56199827037a1686ed1ae01bc"
     },
     {
       "path": "src/config.js",
@@ -81,13 +81,13 @@
     },
     {
       "path": "src/ui/welcome.js",
-      "bytes": 8793,
-      "sha256": "7d29c8b58d65886b4308c43e38e580e6093ab350bd8f9e0d5f55a78e3309391f"
+      "bytes": 9734,
+      "sha256": "f3236275ac72600a5f74114ff34e7baae67430a17c2ae3311c5f4620f98f0c5b"
     },
     {
       "path": "styles.css",
-      "bytes": 34361,
-      "sha256": "02d2564b25649aa33bbf36edb194ea97d3237a4fedabf523ee5c5701a4687808"
+      "bytes": 36680,
+      "sha256": "78e137dfe4efe3b499659bf4afd72c95710071cc27a3c3506704aa11b871ffb4"
     }
   ]
 }
