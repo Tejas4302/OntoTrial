@@ -48,3 +48,9 @@ The public client account is intentionally non-privileged and exists only for th
 ## Scenario engine boundary
 
 The bundled deterministic engine is an explainable planning heuristic rather than a general optimizer. It models supplier delays, inventory timing, alternate recovery and order exposure for the demonstration dataset. It does not claim to model every production constraint such as labor capacity, multi-level BOMs, yield uncertainty or commercial split-delivery rules.
+
+## Decision workflow
+
+OntoTrail separates analytical evidence from execution. Cortex Analyst answers governed analytical questions. The application can detect compound analytics-plus-recommendation questions, submit the analytical portion to Cortex Analyst, and create a context-aware recommended action from the returned evidence. Decisions capture owner, owner email, due date, priority, status, expected outcome, notification state, and an activity timeline.
+
+Decision notification requests are sent to `/api/decision-notify`. Email provider credentials stay server-side. Status changes are recorded in the decision activity history and can trigger a new owner notification.

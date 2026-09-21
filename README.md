@@ -138,3 +138,12 @@ OntoTrail uses three demo roles:
 - **Client User** — uses the CoCo CLI Hackathon planning and analytics workspace. Configure with `ONTOTRAIL_CLIENT_EMAIL` and `ONTOTRAIL_CLIENT_PASSWORD`.
 
 All credentials remain in Vercel environment variables. Do not commit passwords or tokens to the repository.
+
+## Decision email notifications
+
+Decision Board email delivery uses Resend through the server-side `/api/decision-notify` function. Add these Vercel environment variables for Production:
+
+- `RESEND_API_KEY` - Resend API key (Secret)
+- `DECISION_EMAIL_FROM` - verified sender, for example `OntoTrail <decisions@yourdomain.com>`
+
+If email delivery is not configured, decisions and status history still work; the UI marks the notification as pending configuration. No email credentials are stored in the browser or repository.
