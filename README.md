@@ -38,6 +38,8 @@ Do not upload `node_modules/`, `test-results/`, credentials, or real customer da
 
 Configuration reference: [Vercel project configuration](https://vercel.com/docs/project-configuration/vercel-json).
 
+Deployment trigger for Cortex integration.
+
 ## What you can do
 
 | Workspace | Function |
