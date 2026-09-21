@@ -1,3 +1,4 @@
+import {readSession} from '../lib/auth.js';
 const MAX_QUESTION=500;
 const headers={'Content-Type':'application/json','Cache-Control':'no-store'};
 
@@ -43,6 +44,7 @@ async function executeSql(base,pat,warehouse,sql){
 
 export default async function handler(req,res){
   if(req.method!=='POST'){res.setHeader('Allow','POST');return send(res,405,{error:'Method not allowed.'});}
+  if(!readSession(req))return send(res,401,{error:'Authentication required.'});
   const pat=process.env.SNOWFLAKE_PAT;
   const base=cleanBase(process.env.SNOWFLAKE_ACCOUNT_URL);
   const semanticView=process.env.SNOWFLAKE_SEMANTIC_VIEW;

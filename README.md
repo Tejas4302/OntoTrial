@@ -1,111 +1,129 @@
-# OntoTrail · Industrial planning prototype
+# OntoTrail
 
-A supply-chain planning workspace that connects supplier disruptions to inventory, shipments, customer orders and supporting evidence. Built from `OntoTrail-Demo-2.html` and redesigned as a modular, Vercel-ready application.
+OntoTrail is a supply-chain intelligence workspace for tracing disruption impact across suppliers, products, plants, customers and orders. The CoCo CLI Hackathon workspace combines scenario analysis with Snowflake Cortex Analyst so authenticated users can ask business questions in natural language and inspect the grounded result, visualization, table and generated SQL.
 
-**Release 1.0.0 · Synthetic demonstration · Dataset snapshot 18 September 2026**
+**Client workspace:** CoCo CLI Hackathon  
+**Dataset snapshot:** 18 September 2026  
+**Access model:** Authenticated tenant workspace
 
-This is a production-oriented prototype, not a live enterprise deployment. All business records are synthetic and publicly downloadable. The assistant uses deterministic guided intents, not an LLM. Saved scenarios and recent activity live in this browser only. There is no authentication, Snowflake connection, shared database or procurement execution.
+## Client access
 
-## Home and account screens
+The deployed demo uses server-side authentication. Jury credentials are distributed privately and are not stored in this public repository or browser JavaScript.
 
-The app opens on a branded home page. Log in and Sign up preview the account experience, with form validation, password visibility and a demo guest path. These are interface previews: credentials are not checked, stored or sent; signup creates no account. Use sample details only. The workspace remains a public synthetic demo. The Home link in the workspace returns to the landing page.
+Unauthenticated visitors can view only the public product landing page and login screen. Workspace routes redirect to login when no valid session is present, and the Snowflake analytics endpoint rejects unauthenticated requests.
 
-## Start locally
+## Key capabilities
 
-Install Node.js 22, extract this archive, and open a terminal in the directory containing `package.json`:
+| Area | Capability |
+| --- | --- |
+| Control tower | Exposure, coverage, supplier status and disruption KPIs |
+| Supply network | Trace supplier, shipment, component and order relationships |
+| Scenario lab | Compare baseline, disruption and recovery scenarios |
+| Ask OntoTrail | Natural-language analytics grounded through Snowflake Cortex Analyst |
+| Results | Direct business answer, dynamic visualization, filters and detailed table |
+| Auditability | Generated SQL available as a collapsed audit trail |
+| Access | Authenticated client session with explicit logout |
+
+## Snowflake architecture
+
+```text
+Authenticated browser session
+  -> /api/analyst
+  -> Snowflake Cortex Analyst
+  -> ONTOTRAIL.SUPPLY_CHAIN.ONTOTRAIL_COCO_ANALYST
+  -> governed SQL
+  -> Snowflake SQL API
+  -> OntoTrail result UI
+```
+
+The browser never receives the Snowflake Programmatic Access Token. The server endpoint accepts Cortex-generated read-only queries and rejects non-read-only SQL before execution.
+
+## Required Vercel environment variables
+
+Snowflake:
+
+```text
+SNOWFLAKE_PAT
+SNOWFLAKE_ACCOUNT_URL
+SNOWFLAKE_SEMANTIC_VIEW
+SNOWFLAKE_WAREHOUSE
+```
+
+Authentication:
+
+```text
+ONTOTRAIL_AUTH_SECRET
+ONTOTRAIL_CLIENT_EMAIL
+ONTOTRAIL_CLIENT_PASSWORD
+ONTOTRAIL_ADMIN_EMAIL          # optional
+ONTOTRAIL_ADMIN_PASSWORD       # optional
+```
+
+`ONTOTRAIL_AUTH_SECRET` should be a long random value and must never be committed. Client and administrator passwords must remain Vercel secrets.
+
+## CoCo CLI data model
+
+The Snowflake demo model contains 72 orders represented across three governed scenarios, producing 216 analytical rows. It spans 12 suppliers, 8 customers, 12 products and 4 plants.
+
+The governed scenarios are:
+
+- `BASELINE`
+- `ARUNA_4D`
+- `ARUNA_4D_RECOVERY`
+
+Exposure represents order value at risk in the scenario; it is not claimed lost revenue. Scenario rows remain separate and must not be aggregated into a single grand total.
+
+The Snowflake setup script is available at `snowflake/01_coco_cli_demo_dataset.sql`. It creates the client demo table and the separate `ONTOTRAIL_COCO_ANALYST` semantic view without replacing the original `ONTOTRAIL_ANALYST` view.
+
+## Run locally
+
+Requires Node.js 22.
 
 ```bash
 npm ci --ignore-scripts
 npm run dev
 ```
 
-Open http://localhost:3000. Use the local server; opening `index.html` directly with `file://` does not support the module-based application.
+For full authenticated API testing, provide the same environment variables locally. Static/domain verification can be run with:
 
 ```bash
-npm run verify  # source checks, 43 automated tests, static build
-npm run preview # serve the built dist/ directory
+npm run verify
 ```
 
-There are no application dependencies or runtime CDN requests. Playwright is an optional browser-test dependency installed separately by CI.
+## Deploy to Vercel
 
-## GitHub → Vercel
+1. Import this repository into Vercel.
+2. Use Node.js 22.x.
+3. Keep the build configuration from `vercel.json`.
+4. Configure Snowflake and authentication environment variables in Vercel.
+5. Deploy from the production branch.
+6. Confirm that unauthenticated workspace URLs redirect to login.
+7. Confirm login, logout and Cortex Analyst access before sharing the demo.
 
-1. **Extract the ZIP.** Create a GitHub repository and upload the extracted project contents. Put `package.json`, `package-lock.json`, `vercel.json`, `public/`, `src/`, `scripts/` and `tests/` at the repository root. Include `.github/` for CI. Uploading only the ZIP will not deploy the application.
-2. In Vercel, add a project and import that repository. Choose **Other** if asked for a framework. Use the repository root, Node.js **22.x**, install command `npm ci --ignore-scripts`, build command `npm run verify`, and output directory **dist**. `vercel.json` supplies these commands and security headers.
-3. Deploy. No environment variables are needed for this synthetic version. Run the browser/manual checks below before sharing the resulting URL as a tested release.
+## Repository structure
 
-Do not upload `node_modules/`, `test-results/`, credentials, or real customer data. `dist/` is generated by Vercel. GitHub Actions runs browser tests independently of Vercel; deployment success alone does not establish that browser CI passed. Require the Verify OntoTrail check before merging release changes.
-
-Configuration reference: [Vercel project configuration](https://vercel.com/docs/project-configuration/vercel-json).
-
-## What you can do
-
-| Workspace | Function |
-| --- | --- |
-| Control tower | Read order exposure, coverage, recovery premium, supplier status and a delivery chart. |
-| Order workbench | Search, filter, sort and page orders; inspect allocations and source evidence; export CSV. |
-| Supply network | Follow supplier → shipment → component → order relationships by component. |
-| Scenario lab | Preview independent supplier delays, assembly buffer and recovery before applying; compare, save, load, delete, import, export and share. |
-| Evidence library | Search source documents and inspect linked structured records. |
-| Workspace guide | Understand scope, allocation rules, connection status and local activity. |
-
-Ask OntoTrail supports guided questions about risk, suppliers, specific order IDs and recovery. Answers cite source records and carry their scenario snapshot. Unsupported questions receive a scope message instead of an invented answer.
-
-## Three-minute demo
-
-1. Start on the Control tower. The example has Aruna delayed **4 days**, a **2-day** assembly buffer, and recovery off: **2 at-risk orders**, **₹10.40 lakh** total order-value exposure.
-2. Open ORD-1002 and follow its inventory, shipment and document references.
-3. Open Scenario lab. Enable recovery and inspect the preview before applying it: **1 at-risk order**, **₹4.55 lakh** exposure, **90 recovery units**, **₹81,000** premium. ORD-1002 remains late because the alternate stock arrives after its material deadline.
-4. Apply, save, export or copy the scenario link. A shared URL reproduces assumptions against this dataset; it does not share browser storage.
-5. Select **Zero all delays** and apply to demonstrate the true no-disruption baseline: no orders at risk and no recovery premium.
-
-The older demo's ₹1.08 lakh premium assumed 120 alternate units. This release buys only 90 timely units because regular stock covers the later order. Update any pitch slide that still uses the older amount.
-
-## Model and data boundaries
-
-Allocation is earliest due date first, then order ID. Priority is a triage label, not a scheduling override. For each order the model consumes timely regular supply, timely alternate supply if enabled, then reserves future regular supply for outstanding demand. Reserved backlog cannot be reused by later orders. Dates are calendar days in UTC; there are no working-day calendars or multi-level bills of materials. The alternate source is assumed compatible and limited to 120 units for PT-01.
-
-Exposure is the full value of any order short of its material deadline. It is **not forecast revenue loss**. Recovery premium is a planning estimate, not an approved purchase. “Coverage” is the percentage of orders whose complete quantity meets the material deadline.
-
-## Verification and release gates
-
-Completed in the build environment: **43 Node tests passed**, including allocation invariants over **686 combined disruption scenarios**, source/import validation, template rendering, storage failures, CSV safety and local HTTP access/security tests. The static build passed.
-
-**Browser acceptance tests did not run here:** the Chromium executable was unavailable and its download could not complete. Desktop/mobile rendering, keyboard interactions and real browser execution remain release checks. CI includes the browser suite and screenshot artifacts; do not describe it as passed until it runs successfully.
-
-To run it yourself after the static build:
-
-```bash
-npm install --no-save --package-lock=false --ignore-scripts playwright@1.62.1
-npx playwright install chromium
-npm run test:browser
+```text
+api/                 Server-side authentication and Cortex Analyst bridge
+lib/                 Server-side session signing utilities
+public/              HTML shell, styles and static assets
+src/domain/           Scenario and allocation domain logic
+src/services/         Cortex client and browser persistence
+src/ui/               UI rendering and formatting
+snowflake/            Demo dataset and semantic-view setup
+scripts/              Build and local development utilities
+tests/                Domain, view and HTTP tests
+docs/                 Architecture, evaluation and testing notes
+vercel.json           Deployment and security configuration
 ```
 
-See [testing](docs/TESTING.md), [evaluation](docs/EVALUATION.md), and [architecture and live integration](docs/ARCHITECTURE.md).
+## Security
 
-## Project structure
+Snowflake credentials remain server-side. Authentication uses an HttpOnly, Secure, SameSite session cookie signed with `ONTOTRAIL_AUTH_SECRET`. `/api/analyst` requires a valid session before accessing Snowflake.
 
-- `public/`: HTML shell, responsive CSS, logo and favicon.
-- `src/domain/`: dataset, validation, allocation engine, scenario serialization and guided assistant.
-- `src/services/`: guarded browser persistence.
-- `src/ui/`: escaped view templates, icon and formatting helpers.
-- `src/app.js`: navigation, state and interaction handlers.
-- `scripts/`: build, checks and restricted local static server.
-- `tests/`: domain, view, HTTP and browser acceptance tests.
-- `.github/workflows/ci.yml`: Node verification and browser CI.
-- `vercel.json`: static deployment commands and security headers.
+For a production multi-tenant deployment, tenant authorization should also be enforced in the data layer for every query, with least-privilege Snowflake roles, centralized identity, durable audit records and a production network/authentication strategy.
 
-No deployment URL or GitHub repository has been created by this handoff. You own the deployment workflow described above.
+## Documentation
 
-
-## Live Snowflake Cortex Analyst integration
-
-The Vercel deployment can call Cortex Analyst through `POST /api/analyst`. Configure these Vercel environment variables: `SNOWFLAKE_PAT` (Secret), `SNOWFLAKE_ACCOUNT_URL`, `SNOWFLAKE_SEMANTIC_VIEW`, and `SNOWFLAKE_WAREHOUSE`. Never commit the PAT. The server bridge asks Cortex Analyst for grounded SQL and executes only generated read-only `SELECT`/`WITH` statements through Snowflake SQL API.
-
-## CoCo CLI Hackathon demo tenant (v1.2)
-
-The jury-facing prototype now includes a dedicated synthetic tenant and role preview. Client demo credentials are `jury@cococli.demo` / `CoCo2026!`. The admin preview is `admin@ontotrail.demo` / `OntoTrail2026!`. These are intentionally public prototype credentials stored client-side and must never be reused for production authentication or connected to privileged backend actions.
-
-Ask OntoTrail now suppresses Cortex's interpretation preamble and presents a direct business answer, formatted INR values, a dynamic bar visualization, result filters, a detailed table, follow-up suggestions and a collapsed generated-SQL audit trail.
-
-To expand the live Cortex dataset, run `snowflake/01_coco_cli_demo_dataset.sql` in Snowsight. It creates 72 synthetic base orders × 3 governed scenarios (216 analytical rows) across 12 suppliers, 8 customers, 12 products and 4 plants, then replaces `ONTOTRAIL.SUPPLY_CHAIN.ONTOTRAIL_ANALYST` with a semantic view over that dataset. Review the script before running it because `CREATE OR REPLACE SEMANTIC VIEW` replaces the current semantic view definition.
+- [Architecture](docs/ARCHITECTURE.md)
+- [Testing](docs/TESTING.md)
+- [Evaluation notes](docs/EVALUATION.md)
