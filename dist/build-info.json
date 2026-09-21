@@ -21,13 +21,13 @@
     },
     {
       "path": "src/app.js",
-      "bytes": 24974,
-      "sha256": "8d253271e50bc8778e5175b86559f41fbfbbb9c56199827037a1686ed1ae01bc"
+      "bytes": 29788,
+      "sha256": "fcf54aed37b71c3b8f3fa0a873047e1eee03b760ea214850f9af877af7246bc5"
     },
     {
       "path": "src/config.js",
-      "bytes": 318,
-      "sha256": "36c9bdd226f1c2d5af185cd88a94bed648dfd6b8eb9a43828ef52db37ba76e78"
+      "bytes": 345,
+      "sha256": "e62c61c11f88ae276793e36ef63edaf9c3bceedc94a11e029b681f043c9237e4"
     },
     {
       "path": "src/domain/assistant.js",
@@ -60,6 +60,11 @@
       "sha256": "ac5f9bb9333bc452459bd2dd88f4b69dac9ba554f7a5f3e8a1e5bfaaff72424c"
     },
     {
+      "path": "src/services/decisions.js",
+      "bytes": 2029,
+      "sha256": "0646cc231a448850f3c2ed844c46e8ff845a26d6fa77450b93831ab817470ee5"
+    },
+    {
       "path": "src/services/storage.js",
       "bytes": 1657,
       "sha256": "b982ce9664d0ec31ce50a5362a29fe4ed78674d2c3a1861a9a16f3d6327e3710"
@@ -76,18 +81,18 @@
     },
     {
       "path": "src/ui/views.js",
-      "bytes": 23574,
-      "sha256": "a9099a0cc510593084f2e5add0d4e36bb7161d6e701a86125015f2e84cf35f89"
+      "bytes": 26914,
+      "sha256": "91b62886a7933013838b8572f0be178a9df44da5f6d797b265ec4ee4d8e6504e"
     },
     {
       "path": "src/ui/welcome.js",
-      "bytes": 9734,
-      "sha256": "f3236275ac72600a5f74114ff34e7baae67430a17c2ae3311c5f4620f98f0c5b"
+      "bytes": 14383,
+      "sha256": "95b47511a0fbe7dd51a170fba2d3fe300d1d9a157949e5ae4c58a3d12cce88ea"
     },
     {
       "path": "styles.css",
-      "bytes": 36680,
-      "sha256": "78e137dfe4efe3b499659bf4afd72c95710071cc27a3c3506704aa11b871ffb4"
+      "bytes": 43400,
+      "sha256": "0a39d0e3c49fe31d968da65a065387be288c956c98b97a52cdb4d5cadbeecf4b"
     }
   ]
 }

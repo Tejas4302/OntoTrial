@@ -1,2 +1,2 @@
-export const APP = Object.freeze({name:'OntoTrail',version:'1.0.0',scenarioVersion:1,maxDelay:14,maxSaved:20,maxActivity:50});
-export const VIEWS = Object.freeze({overview:'Control tower',orders:'Order workbench',network:'Supply network',scenarios:'Scenario lab',evidence:'Evidence library',about:'Workspace guide'});
+export const APP = Object.freeze({name:'OntoTrail',version:'1.1.0',scenarioVersion:1,maxDelay:14,maxSaved:20,maxActivity:50});
+export const VIEWS = Object.freeze({overview:'Control tower',orders:'Order workbench',network:'Supply network',scenarios:'Scenario lab',evidence:'Evidence library',decisions:'Decision board',about:'Workspace guide'});

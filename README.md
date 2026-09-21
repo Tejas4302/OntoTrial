@@ -127,3 +127,14 @@ For a production multi-tenant deployment, tenant authorization should also be en
 - [Architecture](docs/ARCHITECTURE.md)
 - [Testing](docs/TESTING.md)
 - [Evaluation notes](docs/EVALUATION.md)
+
+
+## Role model
+
+OntoTrail uses three demo roles:
+
+- **OntoTrail Platform Admin** — manages client organizations and account metadata. Configure with `ONTOTRAIL_ADMIN_EMAIL` and `ONTOTRAIL_ADMIN_PASSWORD`.
+- **Client Admin** — manages users inside the CoCo CLI Hackathon tenant and can use the client workspace. Configure with `ONTOTRAIL_CLIENT_ADMIN_EMAIL` and `ONTOTRAIL_CLIENT_ADMIN_PASSWORD`.
+- **Client User** — uses the CoCo CLI Hackathon planning and analytics workspace. Configure with `ONTOTRAIL_CLIENT_EMAIL` and `ONTOTRAIL_CLIENT_PASSWORD`.
+
+All credentials remain in Vercel environment variables. Do not commit passwords or tokens to the repository.
