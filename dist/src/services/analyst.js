@@ -1,0 +1,16 @@
+/** Client for the server-side Cortex Analyst bridge. No Snowflake secrets reach the browser. */
+export async function askAnalyst(question){
+  const controller=new AbortController();
+  const timer=setTimeout(()=>controller.abort(),45000);
+  try{
+    const response=await fetch('/api/analyst',{
+      method:'POST',
+      headers:{'Content-Type':'application/json'},
+      body:JSON.stringify({question}),
+      signal:controller.signal
+    });
+    const payload=await response.json().catch(()=>({}));
+    if(!response.ok)throw Error(payload.error||`Cortex Analyst request failed (${response.status}).`);
+    return payload;
+  }finally{clearTimeout(timer);}
+}

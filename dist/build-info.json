@@ -1,0 +1,93 @@
+{
+  "app": "ontotrail-industrial-prototype",
+  "version": "1.0.0",
+  "dataset": "ontotrail-manufacturing-2026-09-18-v2",
+  "mode": "synthetic-demo",
+  "files": [
+    {
+      "path": "assets/favicon.svg",
+      "bytes": 240,
+      "sha256": "9060089522d2e3f3d566743e8c547e4bf3821090ee120a081092cd31570e9ede"
+    },
+    {
+      "path": "assets/ontotrail-logo.png",
+      "bytes": 336398,
+      "sha256": "a081fb3ce4ec381b06333c7aacb05e7a9f9b692d338dc1ddbf12c3de1df492f5"
+    },
+    {
+      "path": "index.html",
+      "bytes": 2448,
+      "sha256": "4f0013561445dbcc1c2bd29f0dd37561a66fef7c82a43ca6b7fd91d8f466d772"
+    },
+    {
+      "path": "src/app.js",
+      "bytes": 20412,
+      "sha256": "a4845f13409bab55579b5c33f4be5974a4d5c0302b0806f775c2501d5cc031ec"
+    },
+    {
+      "path": "src/config.js",
+      "bytes": 318,
+      "sha256": "36c9bdd226f1c2d5af185cd88a94bed648dfd6b8eb9a43828ef52db37ba76e78"
+    },
+    {
+      "path": "src/domain/assistant.js",
+      "bytes": 5079,
+      "sha256": "eeb04289763aab8152839ab73977e69183c567083d1a6a110fb102832268e08f"
+    },
+    {
+      "path": "src/domain/data.js",
+      "bytes": 5369,
+      "sha256": "ff5f928d6f7bfbf8eca013f0a1c74bae9a99f8696730765f1c6db1b0b6e7f907"
+    },
+    {
+      "path": "src/domain/engine.js",
+      "bytes": 4104,
+      "sha256": "03947d975bc1f63fad61680358e616d516754d55f01cdbf254218489504efbcf"
+    },
+    {
+      "path": "src/domain/scenario.js",
+      "bytes": 2314,
+      "sha256": "6b3ae373e48c6f238e1c6506e0a3f1df11b8cca2025a6ea2e268cd88af9065fe"
+    },
+    {
+      "path": "src/domain/validation.js",
+      "bytes": 5076,
+      "sha256": "a482088ab5bdd62acccedcf0fded12809870a1b3297369b5fd8a46decf2d5b03"
+    },
+    {
+      "path": "src/services/analyst.js",
+      "bytes": 659,
+      "sha256": "ac5f9bb9333bc452459bd2dd88f4b69dac9ba554f7a5f3e8a1e5bfaaff72424c"
+    },
+    {
+      "path": "src/services/storage.js",
+      "bytes": 1657,
+      "sha256": "b982ce9664d0ec31ce50a5362a29fe4ed78674d2c3a1861a9a16f3d6327e3710"
+    },
+    {
+      "path": "src/ui/format.js",
+      "bytes": 1250,
+      "sha256": "6c4121c6107f281ba28a5cb3439873d8442fa0a9ca54429ebd242cee490d5b94"
+    },
+    {
+      "path": "src/ui/icons.js",
+      "bytes": 2072,
+      "sha256": "12be8819b14787065032c28b2f67edb49fa6c0f0808fd4cf77afd9e5f5bdea23"
+    },
+    {
+      "path": "src/ui/views.js",
+      "bytes": 23574,
+      "sha256": "a9099a0cc510593084f2e5add0d4e36bb7161d6e701a86125015f2e84cf35f89"
+    },
+    {
+      "path": "src/ui/welcome.js",
+      "bytes": 8793,
+      "sha256": "7d29c8b58d65886b4308c43e38e580e6093ab350bd8f9e0d5f55a78e3309391f"
+    },
+    {
+      "path": "styles.css",
+      "bytes": 34361,
+      "sha256": "02d2564b25649aa33bbf36edb194ea97d3237a4fedabf523ee5c5701a4687808"
+    }
+  ]
+}

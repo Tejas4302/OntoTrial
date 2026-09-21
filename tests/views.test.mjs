@@ -1,0 +1,10 @@
+import test from 'node:test';import assert from 'node:assert/strict';
+import {dataset as d} from '../src/domain/data.js';import {evaluate,example} from '../src/domain/engine.js';
+import {viewMap,orderDetail} from '../src/ui/views.js';
+const scenario=example(d);const result=evaluate(d,scenario);
+const ctx={d,result,draft:scenario,saved:[],activity:[],ui:{query:'',status:'all',priority:'all',sort:'due',page:1,partId:'PT-01',evidenceQuery:'',compareId:''}};
+for(const [name,render] of Object.entries(viewMap))test(`${name} renders meaningful content without inline executable code`,()=>{const html=render(ctx);assert.ok(html.includes('<h1>'));assert.ok(!/<script|\sonclick=|\sonerror=|\sstyle=/i.test(html));assert.ok(!html.includes('undefined'));assert.ok(!html.includes('NaN'));});
+test('saved names and search inputs cannot inject markup',()=>{const unsafe='<img src=x onerror=alert(1)>';const html=viewMap.scenarios({...ctx,saved:[{id:'x-1',name:unsafe,createdAt:'2026-09-19T10:00:00Z',scenario}]});assert.ok(!html.includes(unsafe));assert.ok(html.includes('&lt;img'));const orders=viewMap.orders({...ctx,ui:{...ctx.ui,query:'" onfocus="alert(1)'}});assert.ok(!orders.includes('value="" onfocus='));});
+test('filtering can produce an informative empty state',()=>assert.ok(viewMap.orders({...ctx,ui:{...ctx.ui,query:'missing'}}).includes('No orders match')));
+test('order details distinguish future allocations from timely coverage',()=>{const o=result.rows.find(o=>o.id==='ORD-1002');const html=orderDetail(o,d);assert.ok(html.includes('Arrives after requirement'));assert.ok(html.includes('INV-PT-01'));assert.ok(html.includes('SHP-101'));});
+test('source buttons resolve to actual records',()=>{const known=new Set(['suppliers','parts','orders','inventory','shipments','documents','recoveryQuotes'].flatMap(k=>d[k].map(x=>x.id)));for(const render of Object.values(viewMap))for(const match of render(ctx).matchAll(/data-source="([^"]+)"/g))assert.ok(known.has(match[1]),match[1]);});
