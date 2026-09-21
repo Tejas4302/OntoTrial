@@ -11,23 +11,28 @@
     },
     {
       "path": "assets/ontotrail-logo.png",
-      "bytes": 336398,
-      "sha256": "a081fb3ce4ec381b06333c7aacb05e7a9f9b692d338dc1ddbf12c3de1df492f5"
+      "bytes": 58419,
+      "sha256": "78490efca377c44103dd1eda84188e05d6b585f2ccdc7faf232e1cdcc1b1ebc9"
+    },
+    {
+      "path": "assets/ontotrail-mark.png",
+      "bytes": 12134,
+      "sha256": "cecf17e4d5a0e77f465c8de1287a285209d9e49dbe6f9fb4f1209f553a093c24"
     },
     {
       "path": "index.html",
-      "bytes": 2448,
-      "sha256": "4f0013561445dbcc1c2bd29f0dd37561a66fef7c82a43ca6b7fd91d8f466d772"
+      "bytes": 2662,
+      "sha256": "0bd438b4f9cc3328957577f1053c5a7545de78543b75a35a0c134804905a0588"
     },
     {
       "path": "src/app.js",
-      "bytes": 29788,
-      "sha256": "fcf54aed37b71c3b8f3fa0a873047e1eee03b760ea214850f9af877af7246bc5"
+      "bytes": 37287,
+      "sha256": "0734b3773ba30fb46f1cd9b3612b7074551a848cdf495bc928e423ee351c522b"
     },
     {
       "path": "src/config.js",
-      "bytes": 345,
-      "sha256": "e62c61c11f88ae276793e36ef63edaf9c3bceedc94a11e029b681f043c9237e4"
+      "bytes": 376,
+      "sha256": "66cc1827b1d9b13568cbeb9e3d23ef8a072fa99404db385707f961f01880c8c3"
     },
     {
       "path": "src/domain/assistant.js",
@@ -61,8 +66,13 @@
     },
     {
       "path": "src/services/decisions.js",
-      "bytes": 2029,
-      "sha256": "0646cc231a448850f3c2ed844c46e8ff845a26d6fa77450b93831ab817470ee5"
+      "bytes": 3610,
+      "sha256": "cd4c06504cfa5d5b55a02ea22a6fe31d359afb0a64804873389ba9f1d005cb17"
+    },
+    {
+      "path": "src/services/notifications.js",
+      "bytes": 356,
+      "sha256": "26c59f7422ea424256904d9a467f4dfea3eb5beeb189527b2ba8eca76cbe770c"
     },
     {
       "path": "src/services/storage.js",
@@ -81,18 +91,18 @@
     },
     {
       "path": "src/ui/views.js",
-      "bytes": 26914,
-      "sha256": "91b62886a7933013838b8572f0be178a9df44da5f6d797b265ec4ee4d8e6504e"
+      "bytes": 31283,
+      "sha256": "c4163aef2f4159bf295b4d8b8814cdee15fa689f5c5e4f1f15ae9d76fb6a83d4"
     },
     {
       "path": "src/ui/welcome.js",
-      "bytes": 14383,
-      "sha256": "95b47511a0fbe7dd51a170fba2d3fe300d1d9a157949e5ae4c58a3d12cce88ea"
+      "bytes": 14389,
+      "sha256": "1879bb6711f0a95cd732b871dab68dc7cb6b95c34371f53e9675a98de4d03de2"
     },
     {
       "path": "styles.css",
-      "bytes": 43400,
-      "sha256": "0a39d0e3c49fe31d968da65a065387be288c956c98b97a52cdb4d5cadbeecf4b"
+      "bytes": 52261,
+      "sha256": "97c2b4bf60c9b03a4fab2d4d96b56cf8bd07b8eb3ba2023694ffab387b2c2b9b"
     }
   ]
 }

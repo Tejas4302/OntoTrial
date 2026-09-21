@@ -1,4 +1,4 @@
-const brand='<a class="entry-brand" href="#home"><img src="/assets/ontotrail-logo.png" alt="OntoTrail"></a>';
+const brand='<a class="entry-brand" href="#home"><img src="/assets/ontotrail-mark.png" alt=""><span class="entry-brand-name">OntoTrail</span></a>';
 let session=null;
 async function auth(method='GET',body){
   const response=await fetch('/api/auth',{method,headers:body?{'Content-Type':'application/json'}:{},body:body?JSON.stringify(body):undefined,credentials:'same-origin'});

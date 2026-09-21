@@ -147,3 +147,16 @@ Decision Board email delivery uses Resend through the server-side `/api/decision
 - `DECISION_EMAIL_FROM` - verified sender, for example `OntoTrail <decisions@yourdomain.com>`
 
 If email delivery is not configured, decisions and status history still work; the UI marks the notification as pending configuration. No email credentials are stored in the browser or repository.
+
+
+## Governed metric demo
+
+The CoCo CLI semantic view now includes canonical supply-chain KPIs for on-time delivery rate, fill rate, days of inventory, landed cost, exposure, order value, quantity and delay. The client workspace includes a **Metric governance** page that demonstrates how Planning, Procurement and Logistics can phrase the same business question differently while resolving to the same canonical Snowflake metric.
+
+Suggested jury checks:
+
+- Planning: `What is the total exposure in ARUNA_4D?`
+- Procurement: `What is the total supplier risk exposure for ARUNA_4D?`
+- Logistics: `What is the total exposed order value in ARUNA_4D?`
+
+All three are governed by `total_exposure_inr`.

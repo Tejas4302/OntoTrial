@@ -1,5 +1,6 @@
 -- OntoTrail CoCo CLI Hackathon synthetic dataset
--- Creates a separate demo table and semantic view. It does not replace ONTOTRAIL_ANALYST.
+-- Rebuilds the dedicated demo table and semantic view used by the hackathon workspace.
+-- It does not replace ONTOTRAIL_ANALYST.
 USE ROLE ACCOUNTADMIN;
 USE WAREHOUSE COMPUTE_WH;
 USE DATABASE ONTOTRAIL;
@@ -13,7 +14,12 @@ CREATE OR REPLACE TABLE COCO_DEMO_ORDERS (
     PRODUCT_NAME VARCHAR,
     PLANT_NAME VARCHAR,
     QUANTITY NUMBER,
+    FULFILLED_QUANTITY NUMBER,
     ORDER_VALUE_INR NUMBER(18,2),
+    LANDED_COST_INR NUMBER(18,2),
+    INVENTORY_ON_HAND_UNITS NUMBER,
+    DAILY_DEMAND_UNITS NUMBER,
+    ON_TIME_DELIVERY_FLAG NUMBER(1,0),
     SCENARIO VARCHAR,
     DELAY_DAYS NUMBER,
     EXPOSED_VALUE_RUPEES NUMBER(18,2),
@@ -51,31 +57,74 @@ WITH base_orders AS (
             WHEN 0 THEN 'Bengaluru Plant' WHEN 1 THEN 'Pune Plant'
             WHEN 2 THEN 'Chennai Plant' ELSE 'Hyderabad Plant' END AS PLANT_NAME,
         20 + MOD(N * 17, 181) AS QUANTITY,
-        ROUND((20 + MOD(N * 17, 181)) * (2500 + MOD(N * 1379, 17500)), 2) AS ORDER_VALUE_INR
+        ROUND((20 + MOD(N * 17, 181)) * (2500 + MOD(N * 1379, 17500)), 2) AS ORDER_VALUE_INR,
+        140 + MOD(N * 29, 460) AS BASE_INVENTORY_ON_HAND,
+        12 + MOD(N * 11, 48) AS DAILY_DEMAND_UNITS
     FROM base_orders
 )
 SELECT
-    ORDER_ID, ORDER_DATE, CUSTOMER_NAME, SUPPLIER_NAME, PRODUCT_NAME, PLANT_NAME,
-    QUANTITY, ORDER_VALUE_INR, SCENARIO,
+    ORDER_ID,
+    ORDER_DATE,
+    CUSTOMER_NAME,
+    SUPPLIER_NAME,
+    PRODUCT_NAME,
+    PLANT_NAME,
+    QUANTITY,
+    CASE
+        WHEN SCENARIO = 'BASELINE' THEN QUANTITY
+        WHEN SCENARIO = 'ARUNA_4D' AND SUPPLIER_NAME = 'Aruna Components' THEN FLOOR(QUANTITY * 0.72)
+        WHEN SCENARIO = 'ARUNA_4D' AND MOD(N, 5) = 0 THEN FLOOR(QUANTITY * 0.85)
+        WHEN SCENARIO = 'ARUNA_4D_RECOVERY' AND SUPPLIER_NAME = 'Aruna Components' THEN FLOOR(QUANTITY * 0.92)
+        WHEN SCENARIO = 'ARUNA_4D_RECOVERY' AND MOD(N, 5) = 0 THEN FLOOR(QUANTITY * 0.96)
+        ELSE QUANTITY
+    END AS FULFILLED_QUANTITY,
+    ORDER_VALUE_INR,
+    CASE
+        WHEN SCENARIO = 'BASELINE' THEN ROUND(ORDER_VALUE_INR * 0.620, 2)
+        WHEN SCENARIO = 'ARUNA_4D' AND SUPPLIER_NAME = 'Aruna Components' THEN ROUND(ORDER_VALUE_INR * 0.685, 2)
+        WHEN SCENARIO = 'ARUNA_4D' AND MOD(N, 5) = 0 THEN ROUND(ORDER_VALUE_INR * 0.650, 2)
+        WHEN SCENARIO = 'ARUNA_4D_RECOVERY' AND SUPPLIER_NAME = 'Aruna Components' THEN ROUND(ORDER_VALUE_INR * 0.645, 2)
+        WHEN SCENARIO = 'ARUNA_4D_RECOVERY' AND MOD(N, 5) = 0 THEN ROUND(ORDER_VALUE_INR * 0.635, 2)
+        ELSE ROUND(ORDER_VALUE_INR * 0.620, 2)
+    END AS LANDED_COST_INR,
+    CASE
+        WHEN SCENARIO = 'BASELINE' THEN BASE_INVENTORY_ON_HAND
+        WHEN SCENARIO = 'ARUNA_4D' AND SUPPLIER_NAME = 'Aruna Components' THEN FLOOR(BASE_INVENTORY_ON_HAND * 0.58)
+        WHEN SCENARIO = 'ARUNA_4D' AND MOD(N, 5) = 0 THEN FLOOR(BASE_INVENTORY_ON_HAND * 0.78)
+        WHEN SCENARIO = 'ARUNA_4D_RECOVERY' AND SUPPLIER_NAME = 'Aruna Components' THEN FLOOR(BASE_INVENTORY_ON_HAND * 0.82)
+        WHEN SCENARIO = 'ARUNA_4D_RECOVERY' AND MOD(N, 5) = 0 THEN FLOOR(BASE_INVENTORY_ON_HAND * 0.90)
+        ELSE BASE_INVENTORY_ON_HAND
+    END AS INVENTORY_ON_HAND_UNITS,
+    DAILY_DEMAND_UNITS,
+    CASE
+        WHEN SCENARIO = 'BASELINE' THEN 1
+        WHEN SCENARIO = 'ARUNA_4D' AND (SUPPLIER_NAME = 'Aruna Components' OR MOD(N, 5) = 0) THEN 0
+        WHEN SCENARIO = 'ARUNA_4D_RECOVERY' AND SUPPLIER_NAME = 'Aruna Components' AND MOD(N, 3) = 0 THEN 0
+        ELSE 1
+    END AS ON_TIME_DELIVERY_FLAG,
+    SCENARIO,
     CASE
         WHEN SCENARIO = 'BASELINE' THEN 0
         WHEN SCENARIO = 'ARUNA_4D' AND SUPPLIER_NAME = 'Aruna Components' THEN 4
         WHEN SCENARIO = 'ARUNA_4D' AND MOD(N, 5) = 0 THEN 2
         WHEN SCENARIO = 'ARUNA_4D_RECOVERY' AND SUPPLIER_NAME = 'Aruna Components' THEN 2
         WHEN SCENARIO = 'ARUNA_4D_RECOVERY' AND MOD(N, 5) = 0 THEN 1
-        ELSE 0 END AS DELAY_DAYS,
+        ELSE 0
+    END AS DELAY_DAYS,
     CASE
         WHEN SCENARIO = 'BASELINE' THEN 0
         WHEN SCENARIO = 'ARUNA_4D' AND SUPPLIER_NAME = 'Aruna Components' THEN ROUND(ORDER_VALUE_INR, 2)
         WHEN SCENARIO = 'ARUNA_4D' AND MOD(N, 5) = 0 THEN ROUND(ORDER_VALUE_INR * 0.65, 2)
         WHEN SCENARIO = 'ARUNA_4D_RECOVERY' AND SUPPLIER_NAME = 'Aruna Components' THEN ROUND(ORDER_VALUE_INR * 0.40, 2)
         WHEN SCENARIO = 'ARUNA_4D_RECOVERY' AND MOD(N, 5) = 0 THEN ROUND(ORDER_VALUE_INR * 0.20, 2)
-        ELSE 0 END AS EXPOSED_VALUE_RUPEES,
+        ELSE 0
+    END AS EXPOSED_VALUE_RUPEES,
     CASE
         WHEN SCENARIO = 'BASELINE' THEN 'ON_TIME'
         WHEN SCENARIO = 'ARUNA_4D' AND (SUPPLIER_NAME = 'Aruna Components' OR MOD(N, 5) = 0) THEN 'AT_RISK'
         WHEN SCENARIO = 'ARUNA_4D_RECOVERY' AND (SUPPLIER_NAME = 'Aruna Components' OR MOD(N, 5) = 0) THEN 'MITIGATED'
-        ELSE 'ON_TIME' END AS STATUS
+        ELSE 'ON_TIME'
+    END AS STATUS
 FROM orders
 CROSS JOIN (
     SELECT COLUMN1 AS SCENARIO
@@ -90,7 +139,7 @@ DIMENSIONS (
     demo_orders.order_id AS ORDER_ID WITH SYNONYMS = ('order', 'order number', 'order id'),
     demo_orders.order_date AS ORDER_DATE WITH SYNONYMS = ('date', 'order date'),
     demo_orders.customer_name AS CUSTOMER_NAME WITH SYNONYMS = ('customer', 'client', 'buyer'),
-    demo_orders.supplier_name AS SUPPLIER_NAME WITH SYNONYMS = ('supplier', 'vendor'),
+    demo_orders.supplier_name AS SUPPLIER_NAME WITH SYNONYMS = ('supplier', 'vendor', 'tier 1 supplier'),
     demo_orders.product_name AS PRODUCT_NAME WITH SYNONYMS = ('product', 'component', 'part'),
     demo_orders.plant_name AS PLANT_NAME WITH SYNONYMS = ('plant', 'factory', 'location'),
     demo_orders.scenario AS SCENARIO WITH SYNONYMS = ('scenario', 'simulation'),
@@ -98,26 +147,36 @@ DIMENSIONS (
 )
 METRICS (
     demo_orders.total_exposure_inr AS SUM(demo_orders.EXPOSED_VALUE_RUPEES)
-        WITH SYNONYMS = ('exposure', 'total exposure', 'exposed value', 'risk exposure'),
+        WITH SYNONYMS = ('exposure', 'total exposure', 'exposed value', 'risk exposure', 'supplier risk exposure', 'exposed order value'),
     demo_orders.total_order_value_inr AS SUM(demo_orders.ORDER_VALUE_INR)
         WITH SYNONYMS = ('order value', 'total order value', 'revenue value'),
     demo_orders.total_quantity AS SUM(demo_orders.QUANTITY)
-        WITH SYNONYMS = ('quantity', 'total quantity', 'units'),
+        WITH SYNONYMS = ('quantity', 'total quantity', 'units ordered'),
     demo_orders.average_delay_days AS AVG(demo_orders.DELAY_DAYS)
         WITH SYNONYMS = ('delay', 'average delay', 'delay days'),
     demo_orders.order_count AS COUNT(DISTINCT demo_orders.ORDER_ID)
-        WITH SYNONYMS = ('orders', 'order count', 'number of orders')
+        WITH SYNONYMS = ('orders', 'order count', 'number of orders'),
+    demo_orders.on_time_delivery_rate_pct AS AVG(demo_orders.ON_TIME_DELIVERY_FLAG) * 100
+        WITH SYNONYMS = ('on time delivery', 'on-time delivery rate', 'otd', 'otd rate', 'delivery performance'),
+    demo_orders.fill_rate_pct AS SUM(demo_orders.FULFILLED_QUANTITY) / NULLIF(SUM(demo_orders.QUANTITY), 0) * 100
+        WITH SYNONYMS = ('fill rate', 'order fill rate', 'fulfilled quantity rate', 'service level'),
+    demo_orders.days_of_inventory AS SUM(demo_orders.INVENTORY_ON_HAND_UNITS) / NULLIF(SUM(demo_orders.DAILY_DEMAND_UNITS), 0)
+        WITH SYNONYMS = ('days of inventory', 'inventory days', 'days on hand', 'doi'),
+    demo_orders.total_landed_cost_inr AS SUM(demo_orders.LANDED_COST_INR)
+        WITH SYNONYMS = ('landed cost', 'total landed cost', 'supply cost', 'procurement landed cost')
 )
-COMMENT = 'OntoTrail CoCo CLI Hackathon synthetic supply-chain semantic view';
+COMMENT = 'OntoTrail CoCo CLI Hackathon governed supply-chain semantic view with canonical cross-persona metrics';
 
+-- Validation: scenario totals and canonical KPIs.
 SELECT
     SCENARIO,
     COUNT(*) AS ROW_COUNT,
     COUNT(DISTINCT ORDER_ID) AS ORDER_COUNT,
-    COUNT(DISTINCT SUPPLIER_NAME) AS SUPPLIER_COUNT,
-    COUNT(DISTINCT CUSTOMER_NAME) AS CUSTOMER_COUNT,
-    COUNT(DISTINCT PRODUCT_NAME) AS PRODUCT_COUNT,
-    ROUND(SUM(EXPOSED_VALUE_RUPEES), 2) AS TOTAL_EXPOSURE_INR
+    ROUND(SUM(EXPOSED_VALUE_RUPEES), 2) AS TOTAL_EXPOSURE_INR,
+    ROUND(AVG(ON_TIME_DELIVERY_FLAG) * 100, 2) AS ON_TIME_DELIVERY_RATE_PCT,
+    ROUND(SUM(FULFILLED_QUANTITY) / NULLIF(SUM(QUANTITY), 0) * 100, 2) AS FILL_RATE_PCT,
+    ROUND(SUM(INVENTORY_ON_HAND_UNITS) / NULLIF(SUM(DAILY_DEMAND_UNITS), 0), 2) AS DAYS_OF_INVENTORY,
+    ROUND(SUM(LANDED_COST_INR), 2) AS TOTAL_LANDED_COST_INR
 FROM COCO_DEMO_ORDERS
 GROUP BY SCENARIO
 ORDER BY SCENARIO;

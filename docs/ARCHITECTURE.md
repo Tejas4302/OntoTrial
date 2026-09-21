@@ -54,3 +54,8 @@ The bundled deterministic engine is an explainable planning heuristic rather tha
 OntoTrail separates analytical evidence from execution. Cortex Analyst answers governed analytical questions. The application can detect compound analytics-plus-recommendation questions, submit the analytical portion to Cortex Analyst, and create a context-aware recommended action from the returned evidence. Decisions capture owner, owner email, due date, priority, status, expected outcome, notification state, and an activity timeline.
 
 Decision notification requests are sent to `/api/decision-notify`. Email provider credentials stay server-side. Status changes are recorded in the decision activity history and can trigger a new owner notification.
+
+
+## Semantic governance
+
+`ONTOTRAIL_COCO_ANALYST` defines canonical metrics once in Snowflake. In addition to exposure and order-value metrics, the model now includes `on_time_delivery_rate_pct`, `fill_rate_pct`, `days_of_inventory`, and `total_landed_cost_inr`. Synonyms map persona-specific language to those governed definitions. The Metric Governance view provides a visible persona-consistency demonstration for Planning, Procurement and Logistics.

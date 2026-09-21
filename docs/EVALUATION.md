@@ -18,3 +18,10 @@ Start with the control tower, inspect a disruption, open the scenario lab, then 
 ## Scope
 
 Exposure is order value at risk, not forecast lost revenue. The deterministic scenario engine is an explainable planning heuristic. The public login is a demonstration identity, not production authentication.
+
+
+## Challenge-alignment checks
+
+1. Ask the same exposure question using the Planning, Procurement and Logistics prompts in **Metric governance** and verify that all resolve to the same canonical exposure definition.
+2. Test canonical KPI questions for on-time delivery rate, fill rate, days of inventory and landed cost.
+3. Expand the generated SQL audit trail to confirm the result is grounded in `ONTOTRAIL_COCO_ANALYST`.
