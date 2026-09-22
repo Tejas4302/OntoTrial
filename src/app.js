@@ -521,6 +521,7 @@ async function refreshTradeData(){tradeData={...tradeData,loading:true,error:''}
 try{validateDataset(d);result=evaluate(d,scenario);loadAnalystWorkspace();shell();applySidebarState();render();void refreshTradeData();initWelcome();if(initial.warning||persisted.warning)toast(initial.warning||persisted.warning);}
 catch(err){$('#shell').innerHTML=`<main class="fatal"><h1>OntoTrail could not load its dataset</h1><p>Calculations are unavailable until the source records are corrected.</p><p>${e(err.message)}</p><ul>${(err.issues||[]).map(s=>`<li>${e(s)}</li>`).join('')}</ul></main>`;console.error(err);}
 
+document.addEventListener('click',event=>{if(event.target.closest?.('[data-auth-logout]'))persistAnalystThread();},true);
 window.addEventListener('ontotrail-session',()=>{persistAnalystThread();loadAnalystWorkspace();if(view==='analyst')render();});
 window.addEventListener('pagehide',persistAnalystThread);
 window.addEventListener('beforeunload',persistAnalystThread);
