@@ -1,2 +1,2 @@
-export const APP = Object.freeze({name:'OntoTrail',version:'2.5.2',scenarioVersion:1,maxDelay:14,maxSaved:20,maxActivity:50});
+export const APP = Object.freeze({name:'OntoTrail',version:'2.5.3',scenarioVersion:1,maxDelay:14,maxSaved:20,maxActivity:50});
 export const VIEWS = Object.freeze({analyst:'AI Analyst',overview:'Control tower',orders:'Trade flows',network:'Trade network',scenarios:'Scenario lab',evidence:'Data sources',decisions:'Decision board',governance:'Metric governance',profile:'Profile',about:'Workspace guide'});
