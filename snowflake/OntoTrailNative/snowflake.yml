@@ -4,9 +4,9 @@ entities:
     type: streamlit
     identifier: ONTOTRAIL_NATIVE_V2
     query_warehouse: COMPUTE_WH
-    runtime_name: SYSTEM$ST_CONTAINER_RUNTIME_PY3_11
+    runtime_name: SYSTEM$WAREHOUSE_RUNTIME
     main_file: streamlit_app.py
     artifacts:
       - streamlit_app.py
-      - pyproject.toml
+      - environment.yml
       - .streamlit/config.toml
