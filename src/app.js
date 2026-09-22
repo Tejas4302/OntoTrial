@@ -104,6 +104,17 @@ function applyAnalystFilters(container){const selects=[...container.querySelecto
 
 function showAssistant(){navigate('analyst');requestAnimationFrame(()=>$('#analyst-question')?.focus());}
 function analystUI(){return {log:$('#analyst-chat-log')||$('#chat-log'),input:$('#analyst-question')||$('#question'),form:$('#analyst-ask-form')||$('#ask-form')};}
+const wait=ms=>new Promise(r=>setTimeout(r,ms));
+function analystProgressMarkup(){return `<div class="answer-heading">${icon('chat')}<strong>OntoTrail Intelligence</strong><span class="live-pill">LIVE · SNOWFLAKE CORTEX</span></div><div class="analyst-progress" aria-live="polite"><div class="analyst-progress-line"><span class="analyst-spinner" aria-hidden="true"></span><strong data-progress-label>Understanding your question…</strong></div><div class="analyst-progress-steps"><span class="active">Interpret</span><i></i><span>Govern</span><i></i><span>Query</span><i></i><span>Answer</span></div></div>`;}
+function setAnalystProgress(answerEl,label,step){const labelEl=answerEl.querySelector('[data-progress-label]');if(labelEl)labelEl.textContent=label;answerEl.querySelectorAll('.analyst-progress-steps span').forEach((el,i)=>el.classList.toggle('active',i<=step));}
+async function revealNarrative(container,html){
+ const target=container.querySelector('[data-stream-text]');if(!target)return;
+ const scratch=document.createElement('div');scratch.innerHTML=html;const text=scratch.textContent||'';
+ target.textContent='';target.classList.add('streaming');
+ const words=text.split(/(\s+)/);let out='';
+ for(let i=0;i<words.length;i++){out+=words[i];target.textContent=out;if(i%4===0)await wait(18);}
+ target.innerHTML=html;target.classList.remove('streaming');
+}
 function analystWorkspaceKey(){const s=window.__ONTOTRAIL_SESSION||{};const identity=String(s.email||`${s.tenant||'workspace'}:${s.role||'user'}`).toLowerCase().replace(/[^a-z0-9_-]+/g,'_');return `ontotrail_analyst_workspace_v1_${identity}`;}
 function blankAnalystThread(projectId=''){const now=new Date().toISOString();return {id:crypto.randomUUID(),title:'New chat',projectId,createdAt:now,updatedAt:now,html:''};}
 function normalizeAnalystWorkspace(raw){
@@ -139,9 +150,13 @@ function clearAnalystHistory(){const thread=activeAnalystThread();if(!thread)ret
 async function ask(q){
  const question=q.trim();if(!question)return;if(view!=='analyst')navigate('analyst');const chat=analystUI();if(!chatCount){chat.log?.replaceChildren();const thread=activeAnalystThread();if(thread&&thread.title==='New chat'){thread.title=question.length>52?`${question.slice(0,49)}…`:question;saveAnalystWorkspace();}}
  const {analysisQuestion,wantsRecommendation}=splitCompoundQuestion(question);
- const block=document.createElement('article');block.className='chat-pair';block.innerHTML=`<p class="user-question">${e(question)}</p><div class="assistant-answer"><div class="answer-heading">${icon('chat')}<strong>Asking Snowflake Cortex Analyst…</strong></div><p>Grounding your question in the OntoTrail semantic view.</p></div>`;chat.log?.append(block);chatCount++;if(chat.input){chat.input.value='';chat.input.disabled=true;}const askButton=chat.form?.querySelector('button[type="submit"]');if(askButton)askButton.disabled=true;if(chat.log)chat.log.scrollTop=chat.log.scrollHeight;
+ const block=document.createElement('article');block.className='chat-pair';block.innerHTML=`<p class="user-question">${e(question)}</p><div class="assistant-answer">${analystProgressMarkup()}</div>`;chat.log?.append(block);chatCount++;if(chat.input){chat.input.value='';chat.input.disabled=true;}const askButton=chat.form?.querySelector('button[type="submit"]');if(askButton)askButton.disabled=true;if(chat.log)chat.log.scrollTop=chat.log.scrollHeight;
  try{
-  const a=await askAnalyst(analysisQuestion);const rid=`analyst-${Date.now()}`;const hasRows=Boolean(a.result?.rows?.length);const resultHtml=hasRows?`${analystFilters(a.result,rid)}${analystChart(a.result,rid)}${analystTable(a.result,rid)}`:'';
+  const answerEl=block.querySelector('.assistant-answer');
+  await wait(220);setAnalystProgress(answerEl,'Mapping your question to governed business terms…',1);
+  const progressTimer1=setTimeout(()=>setAnalystProgress(answerEl,'Querying Snowflake Cortex Analyst…',2),650);
+  const progressTimer2=setTimeout(()=>setAnalystProgress(answerEl,'Preparing the governed answer…',3),1500);
+  const a=await askAnalyst(analysisQuestion);clearTimeout(progressTimer1);clearTimeout(progressTimer2);setAnalystProgress(answerEl,'Preparing the governed answer…',3);const rid=`analyst-${Date.now()}`;const hasRows=Boolean(a.result?.rows?.length);const resultHtml=hasRows?`${analystFilters(a.result,rid)}${analystChart(a.result,rid)}${analystTable(a.result,rid)}`:'';
   const sql=a.sql?`<details class="analyst-sql"><summary>Audit trail · View generated SQL</summary><pre>${e(a.sql)}</pre></details>`:'';
   const warning=a.executionWarning?`<p class="analyst-warning">${e(a.executionWarning)}</p>`:'';
   const suggestions=a.suggestions?.length?`<div class="analyst-suggestions"><span>Explore next</span>${a.suggestions.map(s=>`<button type="button" data-question="${e(s)}">${e(s)}</button>`).join('')}</div>`:'';
@@ -149,7 +164,10 @@ async function ask(q){
   const recHtml=rec&&(wantsRecommendation||/EXPOSURE|RISK|DELAY|SHORTAGE/i.test(question))?`<section class="recommendation-card"><span class="eyebrow">RECOMMENDED NEXT MOVE</span><h4>${e(rec.title)}</h4><p>${e(rec.action)}</p><div><span>Suggested owner</span><strong>${e(rec.owner)}</strong></div></section>`:'';
   const decisionButton=hasRows&&rec?`<div class="analyst-actions"><button class="secondary small" data-decision-insight="${e(rid)}">${icon('check')}Create decision from insight</button></div>`:'';
   const interpretation=analysisQuestion!==question?`<p class="query-split-note">I answered the analytical part with Cortex Analyst, then generated the recommended action from the returned evidence.</p>`:'';
-  block.querySelector('.assistant-answer').innerHTML=`<div class="answer-heading">${icon('chat')}<strong>OntoTrail Intelligence</strong><span class="live-pill">LIVE · SNOWFLAKE CORTEX</span></div><p class="direct-answer">${analystNarrative(question,a.result||{columns:[],rows:[]})}</p>${interpretation}${recHtml}${resultHtml}${warning}${decisionButton}${sql}${suggestions}<small>Grounded in ONTOTRAIL_COCO_ANALYST · Request ${e(a.requestId||'Snowflake')}</small>`;
+  const narrative=analystNarrative(question,a.result||{columns:[],rows:[]});
+  answerEl.innerHTML=`<div class="answer-heading">${icon('chat')}<strong>OntoTrail Intelligence</strong><span class="live-pill">LIVE · SNOWFLAKE CORTEX</span></div><p class="direct-answer" data-stream-text></p><div class="analyst-reveal" hidden>${interpretation}${recHtml}${resultHtml}${warning}${decisionButton}${sql}${suggestions}<small>Grounded in ONTOTRAIL_COCO_ANALYST · Request ${e(a.requestId||'Snowflake')}</small></div>`;
+  await revealNarrative(answerEl,narrative);
+  const reveal=answerEl.querySelector('.analyst-reveal');if(reveal){reveal.hidden=false;requestAnimationFrame(()=>reveal.classList.add('visible'));}
  }catch(err){
   const local=answer(question,d,result);block.querySelector('.assistant-answer').innerHTML=`<div class="answer-heading">${icon('chat')}<strong>Local fallback · ${e(local.title)}</strong></div><p>${e(local.text)}</p>${evidenceButtons(local.ids)}<small>Cortex Analyst unavailable: ${e(err.message||'connection error')}</small>`;
  }finally{const current=analystUI();if(current.input){current.input.disabled=false;current.input.focus();}const btn=current.form?.querySelector('button[type="submit"]');if(btn)btn.disabled=false;if(current.log)current.log.scrollTop=current.log.scrollHeight;persistAnalystThread();}
