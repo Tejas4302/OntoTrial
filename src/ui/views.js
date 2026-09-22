@@ -85,8 +85,19 @@ export function scenariosView(ctx){
  </div></section>
  <div class="scenario-layout">
   <section class="panel"><div class="panel-heading"><div><h2>Decision brief</h2><p>Turn the scenario into a judge-friendly sequence: detect → understand → test → decide.</p></div></div>
-   <div class="governance-flow"><span>Detect concentration</span>${icon('arrow')}<span>Trace commodity + mode</span>${icon('arrow')}<span>Apply stress assumption</span>${icon('arrow')}<span>Ask Cortex</span>${icon('arrow')}<span>Create decision</span></div>
-   <div class="guide-columns"><div><h3>Highest-value commodity</h3><p>${e(topCommodity.chapter||'Commodity data loading')} · ${usd(topCommodity.importValueUsd)} · ${pct(topCommodity.seaDependencyPct)} sea dependency.</p></div><div><h3>Recommended demo move</h3><p>Open one scenario in AI Analyst, inspect generated SQL and evidence, then convert the resulting insight into an owned Decision Board item.</p></div></div>
+   <div class="decision-brief-body">
+    <div class="scenario-flow" aria-label="Decision workflow">
+     <div class="scenario-step"><span>1</span><strong>Detect concentration</strong></div>
+     <div class="scenario-step"><span>2</span><strong>Trace commodity + mode</strong></div>
+     <div class="scenario-step"><span>3</span><strong>Apply stress assumption</strong></div>
+     <div class="scenario-step"><span>4</span><strong>Ask Cortex</strong></div>
+     <div class="scenario-step"><span>5</span><strong>Create decision</strong></div>
+    </div>
+    <div class="decision-brief-grid">
+     <article><span class="eyebrow">EXPOSURE DRIVER</span><h3>Highest-value commodity</h3><p>${e(topCommodity.chapter||'Commodity data loading')} · ${usd(topCommodity.importValueUsd)} · ${pct(topCommodity.seaDependencyPct)} sea dependency.</p></article>
+     <article><span class="eyebrow">DEMO HANDOFF</span><h3>Recommended demo move</h3><p>Open one scenario in AI Analyst, inspect generated SQL and evidence, then convert the resulting insight into an owned Decision Board item.</p></article>
+    </div>
+   </div>
   </section>
   <aside class="panel preview-panel"><span class="eyebrow">MODEL BOUNDARY</span><h2>Transparent by design</h2><dl class="preview-list"><div><dt>Baseline</dt><dd>Governed 2026 TradePrism import exposure</dd></div><div><dt>Weather</dt><dd>Current Pelmorex country-level overlay</dd></div><div><dt>Scenario math</dt><dd>Simple stress arithmetic shown explicitly</dd></div><div><dt>Not claimed</dt><dd>Probability of loss, supplier failure, exact shipment delay or port-level impact</dd></div></dl></aside>
  </div>
@@ -147,8 +158,10 @@ export function decisionsView(ctx){
   <article><span>Due in 3 days</span><strong>${dueSoon}</strong><small>Near-term mitigation window</small></article>
   <article><span>Cortex-led decisions</span><strong>${cortexLed}</strong><small>${done} completed · ${waiting} waiting</small></article>
  </div>
- <section class="panel"><div class="panel-heading"><div><h2>Mitigation pipeline</h2><p>Move each action from proposed mitigation to completion while retaining the analytical evidence that triggered it.</p></div><span class="subtle-label">${items.length} decisions</span></div><div class="decision-board">${columns.map(col).join('')}</div>${closed.length?`<div class="closed-decisions"><strong>Closed</strong><span>${closed.length} archived decision${closed.length===1?'':'s'}</span></div>`:''}</section>
- <section class="panel"><div class="panel-heading"><div><h2>Decision quality checklist</h2><p>Use this during the hackathon demo to show the difference between an answer and an operational decision.</p></div></div><div class="guide-columns"><div><h3>Evidence</h3><p>Country, commodity, transport dependency or weather signal is traceable to the governed Snowflake model.</p><h3>Ownership</h3><p>A named role and due date make the mitigation executable.</p></div><div><h3>Action</h3><p>The decision records what will be evaluated or changed, not just what the analysis discovered.</p><h3>Outcome</h3><p>Expected impact and lifecycle status make follow-through visible.</p></div></div></section>`;
+ <section class="panel"><div class="panel-heading"><div><h2>Mitigation pipeline</h2><p>Move each action from proposed mitigation to completion while retaining the analytical evidence that triggered it.</p></div><span class="subtle-label">${items.length} decisions</span></div>
+ ${items.length?`<div class="decision-board">${columns.map(col).join('')}</div>${closed.length?`<div class="closed-decisions"><strong>Closed</strong><span>${closed.length} archived decision${closed.length===1?'':'s'}</span></div>`:''}`:`<div class="decision-board-empty"><div class="decision-board-empty-icon">${icon('check')}</div><h3>No mitigation decisions yet</h3><p>Create one manually or generate a recommendation from AI Analyst to start the execution workflow.</p><button class="primary" data-action="new-decision">${icon('plus')}Create first decision</button></div>`}
+ </section>
+ <section class="panel"><div class="panel-heading"><div><h2>Decision quality checklist</h2><p>Use this during the hackathon demo to show the difference between an answer and an operational decision.</p></div></div><div class="decision-checklist-grid"><article><span class="eyebrow">EVIDENCE</span><h3>Evidence</h3><p>Country, commodity, transport dependency or weather signal is traceable to the governed Snowflake model.</p></article><article><span class="eyebrow">ACTION</span><h3>Action</h3><p>The decision records what will be evaluated or changed, not just what the analysis discovered.</p></article><article><span class="eyebrow">OWNERSHIP</span><h3>Ownership</h3><p>A named role and due date make the mitigation executable.</p></article><article><span class="eyebrow">OUTCOME</span><h3>Outcome</h3><p>Expected impact and lifecycle status make follow-through visible.</p></article></div></section>`;
 }
 
 export function governanceView(){
