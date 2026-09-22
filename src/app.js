@@ -134,7 +134,9 @@ async function revealNarrative(container,html){
  for(let i=0;i<words.length;i++){out+=words[i];target.textContent=out;if(i%4===0)await wait(18);}
  target.innerHTML=html;target.classList.remove('streaming');
 }
-function analystWorkspaceKey(){const s=window.__ONTOTRAIL_SESSION||{};const identity=String(s.email||`${s.tenant||'workspace'}:${s.role||'user'}`).toLowerCase().replace(/[^a-z0-9_-]+/g,'_');return `ontotrail_analyst_workspace_v1_${identity}`;}
+function analystWorkspaceIdentity(){const s=window.__ONTOTRAIL_SESSION||{};return String(s.email||`${s.tenant||'workspace'}:${s.role||'user'}`).toLowerCase().replace(/[^a-z0-9_-]+/g,'_');}
+function analystWorkspaceKey(){return `ontotrail_analyst_workspace_v2_${analystWorkspaceIdentity()}`;}
+function legacyAnalystWorkspaceKey(){return `ontotrail_analyst_workspace_v1_${analystWorkspaceIdentity()}`;}
 function blankAnalystThread(projectId=''){const now=new Date().toISOString();return {id:crypto.randomUUID(),title:'New chat',projectId,createdAt:now,updatedAt:now,html:''};}
 function normalizeAnalystWorkspace(raw){
  const ws=raw&&typeof raw==='object'?raw:{};
@@ -145,7 +147,11 @@ function normalizeAnalystWorkspace(raw){
  return ws;
 }
 function loadAnalystWorkspace(){
- try{const raw=storage.getItem(analystWorkspaceKey());analystWorkspace=normalizeAnalystWorkspace(raw?JSON.parse(raw):null);}catch{analystWorkspace=normalizeAnalystWorkspace(null);}
+ try{
+  storage.removeItem?.(legacyAnalystWorkspaceKey());
+  const raw=storage.getItem(analystWorkspaceKey());
+  analystWorkspace=normalizeAnalystWorkspace(raw?JSON.parse(raw):null);
+ }catch{analystWorkspace=normalizeAnalystWorkspace(null);}
 }
 function saveAnalystWorkspace(){try{storage.setItem(analystWorkspaceKey(),JSON.stringify(analystWorkspace));}catch{}}
 function activeAnalystThread(){return analystWorkspace.threads.find(t=>t.id===analystWorkspace.activeThreadId)||analystWorkspace.threads[0];}
@@ -162,7 +168,7 @@ function newAnalystChat(projectId=''){
 }
 function selectAnalystThread(id){if(!analystWorkspace.threads.some(t=>t.id===id))return;persistAnalystThread();analystWorkspace.activeThreadId=id;saveAnalystWorkspace();chatCount=0;render();}
 function projectDialog(){
- openDetail(`<div class="dialog-head"><div><span class="eyebrow">AI ANALYST</span><h2 id="detail-title">Create project</h2><p>Group related chat threads into one working space.</p></div><button class="icon-button" data-close="detail-dialog" aria-label="Close">×</button></div><form id="project-form" class="detail-body"><label class="field-label">Project name<input class="text-input" name="name" required maxlength="60" placeholder="e.g. Aruna recovery analysis" autofocus></label><div class="form-actions"><button type="button" class="secondary" data-close="detail-dialog">Cancel</button><button class="primary">Create project</button></div></form>`);
+ openDetail(`<div class="dialog-head"><div><span class="eyebrow">AI ANALYST</span><h2 id="detail-title">Create project</h2><p>Group related chat threads into one working space.</p></div><button class="icon-button" data-close="detail-dialog" aria-label="Close">×</button></div><form id="project-form" class="detail-body"><label class="field-label">Project name<input class="text-input" name="name" required maxlength="60" placeholder="e.g. Australia weather-risk review" autofocus></label><div class="form-actions"><button type="button" class="secondary" data-close="detail-dialog">Cancel</button><button class="primary">Create project</button></div></form>`);
 }
 function createAnalystProject(name){const clean=String(name||'').trim();if(!clean)return;const p={id:crypto.randomUUID(),name:clean,createdAt:new Date().toISOString()};analystWorkspace.projects.push(p);const t=blankAnalystThread(p.id);analystWorkspace.threads.unshift(t);analystWorkspace.activeThreadId=t.id;saveAnalystWorkspace();closeDialog('detail-dialog');chatCount=0;navigate('analyst');}
 function clearAnalystHistory(){const thread=activeAnalystThread();if(!thread)return;thread.html='';thread.title='New chat';thread.updatedAt=new Date().toISOString();saveAnalystWorkspace();chatCount=0;if(view==='analyst'){render();toast('Current chat cleared.');}}
