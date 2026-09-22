@@ -54,14 +54,17 @@ export default async function handler(req,res){
 
   const pat=process.env.SNOWFLAKE_PAT;
   const base=cleanBase(process.env.SNOWFLAKE_ACCOUNT_URL);
-  const semanticView=process.env.SNOWFLAKE_SEMANTIC_VIEW;
+  const tradeSemanticView=process.env.SNOWFLAKE_SEMANTIC_VIEW;
+  const novaSemanticView=process.env.SNOWFLAKE_NOVA_SEMANTIC_VIEW||'ONTOTRAIL.SUPPLY_CHAIN.ONTOTRAIL_NOVA_MOBILITY_ANALYST';
   const warehouse=process.env.SNOWFLAKE_WAREHOUSE;
-  if(!pat||!base||!semanticView||!warehouse)return send(res,500,{error:'OntoTrail AI is not fully configured.'});
+  if(!pat||!base||!tradeSemanticView||!warehouse)return send(res,500,{error:'OntoTrail AI is not fully configured.'});
 
   const question=String(req.body?.question||'').trim();
   if(!question||question.length>MAX_QUESTION)return send(res,400,{error:`Enter a question between 1 and ${MAX_QUESTION} characters.`});
 
   const governedQuestion=question;
+  const novaIntent=/\b(nova|supplier|vendor|purchase order|\bpo\b|inventory|days? of cover|stock cover|shipment|material|component|plant|delayed po|operational risk)\b/i.test(question);
+  const semanticView=novaIntent?novaSemanticView:tradeSemanticView;
 
   try{
     const analyst=await fetchWithTimeout(`${base}/api/v2/cortex/analyst/message`,{
@@ -93,6 +96,7 @@ export default async function handler(req,res){
       source:'snowflake-cortex-analyst',
       requestId:body.request_id||analyst.headers.get('x-snowflake-request-id')||'',
       semanticView,
+      semanticDomain:novaIntent?'nova-operations':'india-trade-risk',
       warehouse,
       text:parsed.text,
       sql:sql||'',
