@@ -185,7 +185,7 @@ async function ask(q){
   await wait(220);setAnalystProgress(answerEl,'Mapping your question to governed business terms…',1);
   const progressTimer1=setTimeout(()=>setAnalystProgress(answerEl,'Querying Snowflake Cortex Analyst…',2),650);
   const progressTimer2=setTimeout(()=>setAnalystProgress(answerEl,'Preparing the governed answer…',3),1500);
-  const a=await askAnalyst(governedQuestion);clearTimeout(progressTimer1);clearTimeout(progressTimer2);setAnalystProgress(answerEl,'Preparing the governed answer…',3);const rid=`analyst-${Date.now()}`;const hasRows=Boolean(a.result?.rows?.length);const resultHtml=hasRows?`${analystFilters(a.result,rid)}${analystChart(a.result,rid,question)}${analystTable(a.result,rid)}`:'';
+  const a=await askAnalyst(governedQuestion,{scenario:semanticScenarioName()});clearTimeout(progressTimer1);clearTimeout(progressTimer2);setAnalystProgress(answerEl,'Preparing the governed answer…',3);const rid=`analyst-${Date.now()}`;const hasRows=Boolean(a.result?.rows?.length);const resultHtml=hasRows?`${analystFilters(a.result,rid)}${analystChart(a.result,rid,question)}${analystTable(a.result,rid)}`:'';
   const sql=a.sql?`<details class="analyst-sql"><summary>Audit trail · View generated SQL</summary><pre>${e(a.sql)}</pre></details>`:'';
   const warning=a.executionWarning?`<p class="analyst-warning">${e(a.executionWarning)}</p>`:'';
   const suggestions=a.suggestions?.length?`<div class="analyst-suggestions"><span>Explore next</span>${a.suggestions.map(s=>`<button type="button" data-question="${e(s)}">${e(s)}</button>`).join('')}</div>`:'';
@@ -194,7 +194,7 @@ async function ask(q){
   const decisionButton=hasRows&&rec?`<div class="analyst-actions"><button class="secondary small" data-decision-insight="${e(rid)}">${icon('check')}Create decision from insight</button></div>`:'';
   const interpretation=analysisQuestion!==question?`<p class="query-split-note">I answered the analytical part with Cortex Analyst, then generated the recommended action from the returned evidence.</p>`:'';
   const narrative=analystNarrative(question,a.result||{columns:[],rows:[]},a.text||'');
-  answerEl.innerHTML=`<div class="answer-heading">${icon('chat')}<strong>OntoTrail Intelligence</strong><span class="live-pill">LIVE · SNOWFLAKE CORTEX</span></div><p class="direct-answer" data-stream-text></p><div class="analyst-reveal" hidden>${interpretation}${recHtml}${resultHtml}${warning}${decisionButton}${sql}${suggestions}<small>Grounded in ONTOTRAIL_COCO_ANALYST · Request ${e(a.requestId||'Snowflake')}</small></div>`;
+  answerEl.innerHTML=`<div class="answer-heading">${icon('chat')}<strong>OntoTrail Intelligence</strong><span class="live-pill">LIVE · SNOWFLAKE CORTEX</span></div><p class="direct-answer" data-stream-text></p><div class="analyst-reveal" hidden>${interpretation}${recHtml}${resultHtml}${warning}${decisionButton}${sql}${suggestions}<small>Grounded in ${e(a.semanticView||'ONTOTRAIL_COCO_ANALYST')} · Request ${e(a.requestId||'Snowflake')}</small></div>`;
   await revealNarrative(answerEl,narrative);
   const reveal=answerEl.querySelector('.analyst-reveal');if(reveal){reveal.hidden=false;requestAnimationFrame(()=>reveal.classList.add('visible'));}
  }catch(err){
