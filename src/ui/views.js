@@ -35,14 +35,26 @@ export function overview(ctx){
  <div class="bottom-note">${icon('info')}TradePrism rows are annual bilateral trade flows and forecasts, not individual shipments. Weather risk is an OntoTrail-derived heuristic.</div>`;
 }
 export function ordersView(ctx){
- const t=ctx.tradeData||{};const ui=ctx.ui||{};const q=String(ui.query||'').toLowerCase();let rows=(t.origins||[]).filter(r=>!q||`${r.originIso} ${r.originCountry||''}`.toLowerCase().includes(q));
+ const t=ctx.tradeData||{};const ui=ctx.ui||{};const q=String(ui.query||'').toLowerCase();
+ let rows=(t.origins||[]).filter(r=>!q||`${r.originIso} ${r.originCountry||''}`.toLowerCase().includes(q));
+ const s=t.summary||{};
  const usd=v=>'$'+new Intl.NumberFormat('en-US',{notation:'compact',maximumFractionDigits:2}).format(Number(v||0));
  const pct=v=>new Intl.NumberFormat('en-IN',{maximumFractionDigits:1}).format(Number(v||0))+'%';
- return `${heading('TRADE FLOW WORKBENCH','Country exposure workbench','Inspect India import concentration, transport dependency and weather coverage by origin country.',action('Ask Cortex','go-analyst','chat',true))}
- <section class="panel"><div class="toolbar"><form id="order-search" class="search-field">${icon('search')}<label class="sr-only" for="order-query">Search origin countries</label><input id="order-query" name="query" value="${e(ui.query||'')}" placeholder="Country name or ISO code"><button class="secondary small" type="submit">Search</button></form><span class="subtle-label">${rows.length} origins</span></div>
- <div class="table-scroll"><table><caption class="sr-only">India import exposure by origin country</caption><thead><tr><th>Origin country</th><th>Import value</th><th>Sea</th><th>Air</th><th>Land</th><th>Weather coverage</th><th>Risk</th></tr></thead><tbody>
- ${rows.map(r=>`<tr><td><strong>${e(r.originCountry||r.originIso)}</strong><span class="cell-sub">${e(r.originIso)}</span></td><td>${usd(r.importValueUsd)}</td><td>${pct(r.seaDependencyPct)}</td><td>${pct(r.airDependencyPct)}</td><td>${pct(r.landDependencyPct)}</td><td>${r.weatherAvailable?'Available':'Not available'}</td><td><span class="status ${r.weatherRiskLevel==='HIGH'||r.weatherRiskLevel==='MEDIUM'?'risk':'covered'}">${r.weatherAvailable?e(r.weatherRiskLevel||'LOW'):'—'}</span></td></tr>`).join('')||'<tr><td colspan="7">No matching origins.</td></tr>'}
- </tbody></table></div></section>`;
+ const covered=rows.filter(r=>r.weatherAvailable).length;
+ const elevated=rows.filter(r=>r.weatherRiskLevel==='HIGH'||r.weatherRiskLevel==='MEDIUM').length;
+ return `${heading('TRADE FLOW WORKBENCH','Country exposure workbench','Investigate India import concentration by origin, transport dependency and current weather intelligence.',action('Ask Cortex','go-analyst','chat',true))}
+ <div class="metric-grid">
+  <article class="metric"><div class="metric-label">2026 import value ${icon('orders')}</div><strong class="metric-number">${usd(s.importValueUsd)}</strong><span>Governed nominal India import exposure</span></article>
+  <article class="metric"><div class="metric-label">Sea dependency ${icon('network')}</div><strong class="metric-number">${pct(s.seaDependencyPct)}</strong><span>Trade-value weighted maritime share</span></article>
+  <article class="metric"><div class="metric-label">Weather-covered origins ${icon('check')}</div><strong class="metric-number teal-number">${covered}</strong><span>Origins in the current shortlist with Pelmorex coverage</span></article>
+  <article class="metric"><div class="metric-label">Elevated-risk origins ${icon('alert')}</div><strong class="metric-number risk-number">${elevated}</strong><span>Origins currently rated medium or high</span></article>
+ </div>
+ <section class="panel"><div class="panel-heading"><div><h2>Origin-country exposure</h2><p>Use this table to move from concentration → transport dependency → external risk.</p></div><span class="subtle-label">2026 · IMPORT</span></div>
+ <div class="toolbar"><form id="order-search" class="search-field">${icon('search')}<label class="sr-only" for="order-query">Search origin countries</label><input id="order-query" name="query" value="${e(ui.query||'')}" placeholder="Country name or ISO code"><button class="secondary small" type="submit">Search</button></form><span class="subtle-label">${rows.length} origins</span></div>
+ <div class="table-scroll"><table><caption class="sr-only">India import exposure by origin country</caption><thead><tr><th>Origin country</th><th>Import value</th><th>Sea</th><th>Air</th><th>Land</th><th>Weather</th><th>Affected locations</th><th></th></tr></thead><tbody>
+ ${rows.map(r=>`<tr><td><strong>${e(r.originCountry||r.originIso)}</strong><span class="cell-sub">${e(r.originIso)}</span></td><td>${usd(r.importValueUsd)}</td><td>${pct(r.seaDependencyPct)}</td><td>${pct(r.airDependencyPct)}</td><td>${pct(r.landDependencyPct)}</td><td><span class="status ${r.weatherRiskLevel==='HIGH'||r.weatherRiskLevel==='MEDIUM'?'risk':'covered'}">${r.weatherAvailable?e(r.weatherRiskLevel||'LOW'):'No coverage'}</span></td><td>${r.weatherAvailable?pct(r.affectedLocationPct):'—'}</td><td><button class="text-button" data-question="Explain India import exposure to ${e(r.originCountry||r.originIso)} in 2026, including commodity concentration, transport dependency and weather risk where available.">Analyze ${icon('arrow')}</button></td></tr>`).join('')||'<tr><td colspan="8">No matching origins. Try a country name such as United States, Australia or Germany.</td></tr>'}
+ </tbody></table></div></section>
+ <div class="bottom-note">${icon('info')}“No coverage” means Pelmorex weather intelligence is unavailable for that origin in the current joined dataset; the trade exposure itself remains valid.</div>`;
 }
 export function scenarioPreview(d,s){const result=evaluate(d,s),base=evaluate(d,baseline(d));return `<span class="eyebrow">PREVIEW · UNSAVED ASSUMPTIONS</span><h2>Impact of this scenario</h2><div class="preview-value">${compactMoney(result.metrics.exposurePaise)}<span>full order value exposed</span></div><dl class="preview-list"><div><dt>At-risk orders</dt><dd>${result.metrics.atRisk} of ${result.metrics.orders}</dd></div><div><dt>Units short by required date</dt><dd>${result.metrics.shortfallUnits}</dd></div><div><dt>Recovery units allocated</dt><dd>${result.metrics.recoveryUnits}</dd></div><div><dt>Incremental recovery cost</dt><dd>${money(result.metrics.recoveryCostPaise)}</dd></div><div><dt>No-delay baseline exposure</dt><dd>${money(base.metrics.exposurePaise)}</dd></div></dl><p class="helper">Recovery fills timely shortages only. Regular supply stays reserved for late orders. No purchase order is placed.</p>`;}
 export function scenariosView(ctx){
@@ -63,11 +75,23 @@ export function scenariosView(ctx){
 export function networkView(ctx){
  const t=ctx.tradeData||{};const origins=t.origins||[],commodities=t.commodities||[];
  const usd=v=>'$'+new Intl.NumberFormat('en-US',{notation:'compact',maximumFractionDigits:2}).format(Number(v||0));
- return `${heading('TRADE NETWORK','Follow the relationships','Explore the governed ontology connecting origin countries, India, commodity hierarchy, transport dependency and weather intelligence.')}
- <section class="panel"><div class="panel-heading"><div><h2>Ontology relationships</h2><p>Marketplace entities are connected through the curated India trade-risk layer.</p></div><span class="subtle-label">TradePrism + Pelmorex</span></div>
- <div class="governance-flow"><span>Origin country</span>${icon('arrow')}<span>India trade flow</span>${icon('arrow')}<span>Section → Chapter → Heading → HS4</span>${icon('arrow')}<span>Air / Land / Sea</span>${icon('arrow')}<span>Weather overlay</span></div></section>
- <div class="overview-grid"><section class="panel"><div class="panel-heading"><div><h2>Largest origin nodes</h2><p>2026 import exposure</p></div></div>${origins.slice(0,10).map(r=>`<div class="supplier-row"><span class="supplier-avatar">${e((r.originIso||'--').slice(0,2))}</span><span class="supplier-copy"><strong>${e(r.originCountry||r.originIso)}</strong><small>${usd(r.importValueUsd)} · ${r.weatherAvailable?'weather linked':'trade only'}</small></span></div>`).join('')}</section>
- <section class="panel"><div class="panel-heading"><div><h2>Largest commodity nodes</h2><p>Chapter-level hierarchy</p></div></div>${commodities.slice(0,10).map((r,i)=>`<div class="supplier-row"><span class="supplier-avatar">${i+1}</span><span class="supplier-copy"><strong>${e(r.chapter)}</strong><small>${usd(r.importValueUsd)}</small></span></div>`).join('')}</section></div>`;
+ const pct=v=>new Intl.NumberFormat('en-IN',{maximumFractionDigits:1}).format(Number(v||0))+'%';
+ const weatherLinked=origins.filter(r=>r.weatherAvailable).slice(0,8);
+ return `${heading('TRADE NETWORK','Follow the relationships','Explore how origin countries, commodity hierarchy, transport dependency and weather intelligence connect in the governed ontology.',action('Ask about the network','go-analyst','chat',true))}
+ <section class="panel"><div class="panel-heading"><div><h2>Governed ontology</h2><p>Every Cortex answer resolves through these reusable business entities and relationships.</p></div><span class="subtle-label">TradePrism + Pelmorex</span></div>
+ <div class="governance-flow"><span>Origin country</span>${icon('arrow')}<span>India import flow</span>${icon('arrow')}<span>Section → Chapter → Heading → HS4</span>${icon('arrow')}<span>Air / Land / Sea</span>${icon('arrow')}<span>Country weather overlay</span></div></section>
+ <div class="overview-grid">
+  <section class="panel"><div class="panel-heading"><div><h2>Origin-country nodes</h2><p>Largest 2026 India import relationships</p></div><button class="text-button" data-action="go-orders">Open workbench ${icon('arrow')}</button></div>
+   ${origins.slice(0,10).map((r,i)=>`<div class="supplier-row"><span class="supplier-avatar">${i+1}</span><span class="supplier-copy"><strong>${e(r.originCountry||r.originIso)}</strong><small>${usd(r.importValueUsd)} · ${pct(r.seaDependencyPct)} sea · ${r.weatherAvailable?'weather linked':'trade only'}</small></span><button class="text-button" data-question="What are India’s main import dependencies on ${e(r.originCountry||r.originIso)} in 2026?">Inspect</button></div>`).join('')}
+  </section>
+  <section class="panel"><div class="panel-heading"><div><h2>Commodity hierarchy</h2><p>Chapter-level concentration within India imports</p></div></div>
+   ${commodities.slice(0,10).map((r,i)=>`<div class="supplier-row"><span class="supplier-avatar">${i+1}</span><span class="supplier-copy"><strong>${e(r.chapter)}</strong><small>${usd(r.importValueUsd)} · ${pct(r.seaDependencyPct)} sea dependency</small></span><button class="text-button" data-question="Which origin countries dominate India imports of ${e(r.chapter)} in 2026, and how transport-dependent are they?">Trace</button></div>`).join('')}
+  </section>
+ </div>
+ <section class="panel"><div class="panel-heading"><div><h2>Weather-linked trade nodes</h2><p>Origins where current Pelmorex signals can be overlaid on structural trade exposure.</p></div><span class="subtle-label">${weatherLinked.length} shown</span></div>
+  <div class="saved-grid">${weatherLinked.map(r=>`<article class="saved-card"><span class="eyebrow">${e(r.originIso)}</span><h3>${e(r.originCountry||r.originIso)}</h3><p><strong>${usd(r.importValueUsd)}</strong> import exposure · ${pct(r.seaDependencyPct)} sea · ${e(r.weatherRiskLevel||'LOW')} weather risk · ${pct(r.affectedLocationPct)} affected locations.</p><button class="secondary small" data-question="For ${e(r.originCountry||r.originIso)}, show the highest-value India import commodities in 2026 and explain the current weather-risk overlay.">Explore node</button></article>`).join('')||'<p>No weather-linked origins are available in this shortlist.</p>'}</div>
+ </section>
+ <div class="bottom-note">${icon('info')}The network represents analytical relationships between aggregated trade flows and country-level external signals. It does not infer exact ports, suppliers or shipment routes.</div>`;
 }
 export function evidenceView(ctx){
  const t=ctx.tradeData||{};const s=t.summary||{};
