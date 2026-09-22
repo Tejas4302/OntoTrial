@@ -150,7 +150,7 @@ function persistAnalystThread(){
 }
 function restoreAnalystThread(){
  if(view!=='analyst')return;const log=$('#analyst-chat-log'),thread=activeAnalystThread();if(!log||!thread)return;
- if(thread.html){log.innerHTML=thread.html;chatCount=log.querySelectorAll('.chat-pair').length;log.querySelectorAll('[data-decision-insight]').forEach(btn=>{btn.disabled=true;btn.title='Re-run this question to create a new decision from the latest evidence.';});if(chatCount)log.scrollTop=log.scrollHeight;}else chatCount=0;
+ if(thread.html){log.innerHTML=thread.html;chatCount=log.querySelectorAll('.chat-pair').length;log.querySelectorAll('.chat-pair').forEach(ensureChatActions);log.querySelectorAll('[data-decision-insight]').forEach(btn=>{btn.disabled=true;btn.title='Re-run this question to create a new decision from the latest evidence.';});if(chatCount)log.scrollTop=log.scrollHeight;}else chatCount=0;
 }
 function newAnalystChat(projectId=''){
  persistAnalystThread();const thread=blankAnalystThread(projectId);analystWorkspace.threads.unshift(thread);analystWorkspace.activeThreadId=thread.id;saveAnalystWorkspace();chatCount=0;render();requestAnimationFrame(()=>$('#analyst-question')?.focus());
@@ -161,10 +161,62 @@ function projectDialog(){
 }
 function createAnalystProject(name){const clean=String(name||'').trim();if(!clean)return;const p={id:crypto.randomUUID(),name:clean,createdAt:new Date().toISOString()};analystWorkspace.projects.push(p);const t=blankAnalystThread(p.id);analystWorkspace.threads.unshift(t);analystWorkspace.activeThreadId=t.id;saveAnalystWorkspace();closeDialog('detail-dialog');chatCount=0;navigate('analyst');}
 function clearAnalystHistory(){const thread=activeAnalystThread();if(!thread)return;thread.html='';thread.title='New chat';thread.updatedAt=new Date().toISOString();saveAnalystWorkspace();chatCount=0;if(view==='analyst'){render();toast('Current chat cleared.');}}
+
+function userQuestionInner(question){
+ return `<p class="user-question"><span class="user-question-text">${e(question)}</span></p><div class="chat-message-actions user-message-actions"><button class="chat-action" type="button" data-chat-edit aria-label="Edit message" title="Edit message">Edit</button></div>`;
+}
+function ensureChatActions(pair){
+ if(!pair)return;
+ let q=pair.querySelector('.user-question');
+ if(q&&!pair.querySelector('.user-question-wrap')){
+  const wrap=document.createElement('div');wrap.className='user-question-wrap';q.before(wrap);wrap.append(q);
+  if(!q.querySelector('.user-question-text')){const span=document.createElement('span');span.className='user-question-text';span.textContent=q.textContent||'';q.replaceChildren(span);}
+  const actions=document.createElement('div');actions.className='chat-message-actions user-message-actions';actions.innerHTML='<button class="chat-action" type="button" data-chat-edit aria-label="Edit message" title="Edit message">Edit</button>';wrap.append(actions);
+ }
+ const answer=pair.querySelector('.assistant-answer');
+ if(answer&&!answer.querySelector('.assistant-response-actions')){
+  const actions=document.createElement('div');actions.className='assistant-response-actions';
+  actions.innerHTML='<button class="chat-action" type="button" data-chat-copy aria-label="Copy response" title="Copy response">Copy</button><button class="chat-action" type="button" data-chat-retry aria-label="Try again" title="Try again">Try again</button>';
+  answer.append(actions);
+ }
+}
+function chatPairQuestion(pair){
+ return String(pair?.querySelector('.user-question-text')?.textContent||pair?.querySelector('.user-question')?.textContent||'').trim();
+}
+function beginChatEdit(pair){
+ if(!pair)return;const question=chatPairQuestion(pair);const wrap=pair.querySelector('.user-question-wrap');
+ if(!wrap||!question)return;pair.dataset.editOriginal=question;
+ wrap.innerHTML=`<form class="chat-edit-form"><label class="sr-only">Edit message</label><input class="text-input chat-edit-input" name="message" maxlength="500" value="${e(question)}" required><div class="chat-edit-actions"><button class="secondary small" type="button" data-chat-edit-cancel>Cancel</button><button class="primary small" type="submit">Save & submit</button></div></form>`;
+ requestAnimationFrame(()=>{const input=wrap.querySelector('.chat-edit-input');input?.focus();input?.setSelectionRange(input.value.length,input.value.length);});
+}
+function cancelChatEdit(pair){
+ if(!pair)return;const wrap=pair.querySelector('.user-question-wrap');const question=pair.dataset.editOriginal||chatPairQuestion(pair);
+ if(wrap)wrap.innerHTML=userQuestionInner(question);delete pair.dataset.editOriginal;
+}
+function truncateConversationFrom(pair){
+ if(!pair)return;
+ let node=pair;
+ while(node){const next=node.nextElementSibling;node.remove();node=next;}
+ const log=$('#analyst-chat-log');chatCount=log?log.querySelectorAll('.chat-pair').length:0;persistAnalystThread();
+}
+async function copyChatResponse(pair){
+ if(!pair)return;const answer=pair.querySelector('.assistant-answer');if(!answer)return;
+ const chunks=[...answer.querySelectorAll('.direct-answer,.recommendation-card')].map(el=>el.innerText.trim()).filter(Boolean);
+ const text=(chunks.length?chunks.join('\n\n'):answer.innerText.replace(/\b(Copy|Try again)\b/g,'').trim()).trim();
+ if(!text)return;
+ try{
+  if(navigator.clipboard?.writeText)await navigator.clipboard.writeText(text);
+  else{const ta=document.createElement('textarea');ta.value=text;ta.style.position='fixed';ta.style.opacity='0';document.body.append(ta);ta.select();document.execCommand('copy');ta.remove();}
+  toast('Response copied.');
+ }catch{toast('Could not copy the response.');}
+}
+function retryChat(pair){
+ const question=chatPairQuestion(pair);if(!question)return;truncateConversationFrom(pair);void ask(question);
+}
 async function ask(q){
  const question=q.trim();if(!question)return;if(view!=='analyst')navigate('analyst');const chat=analystUI();if(!chatCount){chat.log?.replaceChildren();const thread=activeAnalystThread();if(thread&&thread.title==='New chat'){thread.title=question.length>52?`${question.slice(0,49)}…`:question;saveAnalystWorkspace();}}
  const {analysisQuestion,wantsRecommendation}=splitCompoundQuestion(question);
- const block=document.createElement('article');block.className='chat-pair';block.innerHTML=`<p class="user-question">${e(question)}</p><div class="assistant-answer">${analystProgressMarkup()}</div>`;chat.log?.append(block);chatCount++;if(chat.input){chat.input.value='';chat.input.disabled=true;}const askButton=chat.form?.querySelector('button[type="submit"]');if(askButton)askButton.disabled=true;if(chat.log)chat.log.scrollTop=chat.log.scrollHeight;
+ const block=document.createElement('article');block.className='chat-pair';block.innerHTML=`<div class="user-question-wrap">${userQuestionInner(question)}</div><div class="assistant-answer">${analystProgressMarkup()}</div>`;chat.log?.append(block);chatCount++;if(chat.input){chat.input.value='';chat.input.disabled=true;}const askButton=chat.form?.querySelector('button[type="submit"]');if(askButton)askButton.disabled=true;if(chat.log)chat.log.scrollTop=chat.log.scrollHeight;
  try{
   const answerEl=block.querySelector('.assistant-answer');
   const governedQuestion=analysisQuestion;
@@ -180,11 +232,11 @@ async function ask(q){
   const decisionButton=hasRows&&rec?`<div class="analyst-actions"><button class="secondary small" data-decision-insight="${e(rid)}">${icon('check')}Create decision from insight</button></div>`:'';
   const interpretation=analysisQuestion!==question?`<p class="query-split-note">I answered the analytical part with Cortex Analyst, then generated the recommended action from the returned evidence.</p>`:'';
   const narrative=analystNarrative(question,a.result||{columns:[],rows:[]},a.text||'');
-  answerEl.innerHTML=`<div class="answer-heading">${icon('chat')}<strong>OntoTrail Intelligence</strong><span class="live-pill">LIVE · SNOWFLAKE CORTEX</span></div><p class="direct-answer" data-stream-text></p><div class="analyst-reveal" hidden>${interpretation}${recHtml}${resultHtml}${warning}${decisionButton}${sql}${suggestions}<small>Grounded in ${e(a.semanticView||'ONTOTRAIL_COCO_ANALYST')} · Request ${e(a.requestId||'Snowflake')}</small></div>`;
+  answerEl.innerHTML=`<div class="answer-heading">${icon('chat')}<strong>OntoTrail Intelligence</strong><span class="live-pill">LIVE · SNOWFLAKE CORTEX</span></div><p class="direct-answer" data-stream-text></p><div class="analyst-reveal" hidden>${interpretation}${recHtml}${resultHtml}${warning}${decisionButton}${sql}${suggestions}<small>Grounded in ${e(a.semanticView||'ONTOTRAIL_COCO_ANALYST')} · Request ${e(a.requestId||'Snowflake')}</small></div><div class="assistant-response-actions"><button class="chat-action" type="button" data-chat-copy aria-label="Copy response" title="Copy response">Copy</button><button class="chat-action" type="button" data-chat-retry aria-label="Try again" title="Try again">Try again</button></div>`;
   await revealNarrative(answerEl,narrative);
   const reveal=answerEl.querySelector('.analyst-reveal');if(reveal){reveal.hidden=false;requestAnimationFrame(()=>reveal.classList.add('visible'));}
  }catch(err){
-  const local=answer(question,d,result);block.querySelector('.assistant-answer').innerHTML=`<div class="answer-heading">${icon('chat')}<strong>Local fallback · ${e(local.title)}</strong></div><p>${e(local.text)}</p>${evidenceButtons(local.ids)}<small>Cortex Analyst unavailable: ${e(err.message||'connection error')}</small>`;
+  const local=answer(question,d,result);block.querySelector('.assistant-answer').innerHTML=`<div class="answer-heading">${icon('chat')}<strong>Local fallback · ${e(local.title)}</strong></div><p class="direct-answer">${e(local.text)}</p>${evidenceButtons(local.ids)}<small>Cortex Analyst unavailable: ${e(err.message||'connection error')}</small><div class="assistant-response-actions"><button class="chat-action" type="button" data-chat-copy aria-label="Copy response" title="Copy response">Copy</button><button class="chat-action" type="button" data-chat-retry aria-label="Try again" title="Try again">Try again</button></div>`;
  }finally{const current=analystUI();if(current.input){current.input.disabled=false;current.input.focus();}const btn=current.form?.querySelector('button[type="submit"]');if(btn)btn.disabled=false;if(current.log)current.log.scrollTop=current.log.scrollHeight;persistAnalystThread();}
 }
 function decisionDialog(seed={}){
@@ -217,6 +269,10 @@ document.addEventListener('click',event=>{const target=event.target.closest('but
   if(target.dataset.order){openOrder(target.dataset.order);return;}
   if(target.dataset.source){event.preventDefault();if($('#assistant-dialog').open)$('#assistant-dialog').close();sourceRecord(target.dataset.source);return;}
   if(target.dataset.nav){event.preventDefault();navigate(target.dataset.nav);return;}
+  if(target.dataset.chatEdit!==undefined){event.preventDefault();beginChatEdit(target.closest('.chat-pair'));return;}
+  if(target.dataset.chatEditCancel!==undefined){event.preventDefault();cancelChatEdit(target.closest('.chat-pair'));return;}
+  if(target.dataset.chatCopy!==undefined){event.preventDefault();void copyChatResponse(target.closest('.chat-pair'));return;}
+  if(target.dataset.chatRetry!==undefined){event.preventDefault();retryChat(target.closest('.chat-pair'));return;}
   if(target.dataset.question){ask(target.dataset.question);return;}
   if(target.dataset.threadId){event.preventDefault();selectAnalystThread(target.dataset.threadId);return;}
   if(target.dataset.projectChat!==undefined){event.preventDefault();newAnalystChat(target.dataset.projectChat);return;}
@@ -235,6 +291,7 @@ document.addEventListener('click',event=>{const target=event.target.closest('but
 });
 document.addEventListener('submit',event=>{event.preventDefault();const form=event.target;
  try{
+  if(form.classList.contains('chat-edit-form')){const pair=form.closest('.chat-pair');const input=form.querySelector('[name="message"]');const edited=String(input?.value||'').trim();if(edited){truncateConversationFrom(pair);void ask(edited);}return;}
   if(form.id==='ask-form'||form.id==='analyst-ask-form'){const input=form.querySelector('input');void ask(input?.value||'');return;}
   if(form.id==='global-search'){ui.query=$('#global-query').value.trim();ui.page=1;ui.status='all';ui.priority='all';navigate('orders');return;}
   if(form.id==='order-search'){ui.query=$('#order-query').value.trim();ui.page=1;render();return;}
