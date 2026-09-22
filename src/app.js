@@ -87,6 +87,53 @@ function analystNarrative(question,result,cortexText=''){
  const m=analystModel(result);if(!m.rows.length)return 'No matching records were returned for this question.';
  const q=String(question||'');const asksLowest=/\b(lowest|minimum|min\.?|smallest|least|bottom)\b/i.test(q);const asksHighest=/\b(highest|maximum|max\.?|largest|most|top)\b/i.test(q);
  const rowIntent=/\b(rest of world|\brow\b)\b/i.test(q);
+ const governanceImportIntent=/\bindia\b/i.test(q)&&/\b2026\b/.test(q)&&(/\btotal import value\b/i.test(q)||/\btotal import exposure\b/i.test(q)||/\btotal inbound trade value\b/i.test(q));
+ if(governanceImportIntent){
+  const cols=m.columns.map(c=>String(c));const find=(patterns)=>cols.find(c=>{const u=c.toUpperCase();return patterns.some(p=>p.test(u));});
+  const importCol=find([/^IMPORT_VALUE_USD$/, /TOTAL.*IMPORT.*VALUE/, /TOTAL_NOMINAL_TRADE_VALUE_USD/])||m.metric;
+  const value=importCol?m.rows.map(r=>analystNumber(r[importCol])).filter(v=>v!==null).reduce((a,b)=>a+b,0):null;
+  if(value!==null)return `India's governed 2026 import value is <strong>${analystFormat(importCol||'IMPORT_VALUE_USD',value)}</strong>. Planning, Procurement and Logistics phrasing all resolve to the canonical <strong>import_value_usd</strong> metric with <strong>TRADE_DIRECTION = IMPORT</strong> and <strong>TRADE_YEAR = 2026</strong>.`;
+ }
+ const governanceSeaIntent=/\bmore than\s+70%\s+sea dependent\b/i.test(q)||(/\bsea dependent\b/i.test(q)&&/\bindia imports\b/i.test(q));
+ if(governanceSeaIntent){
+  const cols=m.columns.map(c=>String(c));const find=(patterns)=>cols.find(c=>{const u=c.toUpperCase();return patterns.some(p=>p.test(u));});
+  const dim=find([/ORIGIN_COUNTRY/,/CHAPTER/,/HEADING/,/HS4/])||m.dimension;
+  const sea=find([/SEA_DEPENDENCY_PCT/]);
+  const valueCol=find([/IMPORT_VALUE_USD/,/TOTAL_NOMINAL_TRADE_VALUE_USD/,/TRADE_VALUE/]);
+  if(dim&&sea){
+   const rows=m.rows.filter(r=>{const v=analystNumber(r[sea]);return v!==null&&v>70;}).sort((a,b)=>(analystNumber(b[valueCol])||0)-(analystNumber(a[valueCol])||0));
+   if(rows.length){
+    const leaders=rows.slice(0,5).map(r=>`<strong>${e(r[dim])}</strong> (${analystFormat(sea,r[sea])}${valueCol&&analystNumber(r[valueCol])!==null?` · ${analystFormat(valueCol,r[valueCol])}`:''})`).join(', ');
+    return `${rows.length} returned import flow${rows.length===1?'':'s'} exceed <strong>70% sea dependency</strong>. Highest-value examples: ${leaders}. Sea dependency is the share of nominal import value carried by sea within the filtered flows.`;
+   }
+   return 'No returned India import flows exceed <strong>70% sea dependency</strong> for the selected 2026 data.';
+  }
+ }
+ const governanceWeatherCoverageIntent=/\bhow much\b.*\bimport value\b.*\bweather intelligence available\b/i.test(q)||/\bweather[- ]covered trade value\b/i.test(q);
+ if(governanceWeatherCoverageIntent){
+  const cols=m.columns.map(c=>String(c));const find=(patterns)=>cols.find(c=>{const u=c.toUpperCase();return patterns.some(p=>p.test(u));});
+  const covered=find([/WEATHER_COVERED_TRADE_VALUE_USD/]),pctCol=find([/WEATHER_COVERAGE_PCT/]),importCol=find([/IMPORT_VALUE_USD/,/TOTAL_NOMINAL_TRADE_VALUE_USD/]);
+  const first=m.rows[0]||{};
+  const coveredValue=covered?analystNumber(first[covered]):null,pct=pctCol?analystNumber(first[pctCol]):null,total=importCol?analystNumber(first[importCol]):null;
+  if(coveredValue!==null||pct!==null){
+   let out='For India imports in 2026, ';
+   if(coveredValue!==null)out+=`<strong>${analystFormat(covered,coveredValue)}</strong> of trade value has Pelmorex weather intelligence`;
+   if(pct!==null)out+=`${coveredValue!==null?' ':''}(<strong>${analystFormat(pctCol,pct)}</strong> coverage)`;
+   if(total!==null)out+=` out of <strong>${analystFormat(importCol,total)}</strong> total import value`;
+   return out+'. Weather coverage indicates data availability, not that the covered trade is necessarily at elevated weather risk.';
+  }
+ }
+ const governanceWeatherRankIntent=/\bamong countries with weather coverage\b/i.test(q)&&/\bhighest import exposure\b/i.test(q)&&/\bweather risk\b/i.test(q);
+ if(governanceWeatherRankIntent){
+  const cols=m.columns.map(c=>String(c));const find=(patterns)=>cols.find(c=>{const u=c.toUpperCase();return patterns.some(p=>p.test(u));});
+  const country=find([/ORIGIN_COUNTRY/,/ORIGIN_ISO/])||m.dimension,importCol=find([/IMPORT_VALUE_USD/,/TOTAL_NOMINAL_TRADE_VALUE_USD/]),risk=find([/TRADE_WEIGHTED_WEATHER_RISK_SCORE/,/WEATHER_RISK_SCORE/]),coverage=find([/WEATHER_COVERAGE_PCT/]),elevated=find([/ELEVATED_WEATHER_RISK_TRADE_VALUE_USD/]);
+  if(country&&m.rows.length){
+   const rows=[...m.rows].filter(r=>!coverage||analystNumber(r[coverage])===null||analystNumber(r[coverage])>0).sort((a,b)=>(analystNumber(b[importCol])||0)-(analystNumber(a[importCol])||0));
+   const leaders=rows.slice(0,5).map(r=>{const bits=[];if(importCol&&analystNumber(r[importCol])!==null)bits.push(analystFormat(importCol,r[importCol]));if(risk&&analystNumber(r[risk])!==null)bits.push(`risk score ${analystFormat(risk,r[risk])}`);if(elevated&&analystNumber(r[elevated])!==null)bits.push(`${analystFormat(elevated,r[elevated])} elevated-risk value`);return `<strong>${e(r[country])}</strong> (${bits.join(' · ')})`;}).join(', ');
+   if(leaders)return `Among weather-covered origins, the largest import exposures in the returned data are ${leaders}. Compare exposure and weather-risk score together; weather risk is an OntoTrail heuristic over covered Pelmorex locations, not a probability of disruption.`;
+  }
+ }
+
  if(rowIntent){
    const cols=m.columns.map(c=>String(c));
    const findCol=(patterns,exclude=[])=>cols.find(c=>{
