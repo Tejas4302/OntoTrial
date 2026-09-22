@@ -62,6 +62,22 @@ function analystCompactUsd(n){const a=Math.abs(n);if(a>=1e9)return '$'+new Intl.
 function analystCompactInr(n){const a=Math.abs(n);if(a>=1e7)return '₹'+new Intl.NumberFormat('en-IN',{maximumFractionDigits:2}).format(n/1e7)+' Cr';if(a>=1e5)return '₹'+new Intl.NumberFormat('en-IN',{maximumFractionDigits:2}).format(n/1e5)+' L';if(a>=1e3)return '₹'+new Intl.NumberFormat('en-IN',{maximumFractionDigits:1}).format(n/1e3)+'K';return '₹'+new Intl.NumberFormat('en-IN',{maximumFractionDigits:0}).format(n);}
 function analystFormat(column,value){const n=analystNumber(value);if(n===null)return e(value??'—');const key=String(column).toUpperCase();if(/INR/.test(key))return analystCompactInr(n);if(/TRADE_VALUE|IMPORT_VALUE|EXPORT_VALUE|NOMINAL|REAL_TRADE|PO_VALUE.*USD|VALUE_USD/.test(key))return analystCompactUsd(n);if(/EXPOSURE|REVENUE|COST|PREMIUM|AMOUNT/.test(key))return analystCompactInr(n);if(/PCT|PERCENT|RATE/.test(key))return `${new Intl.NumberFormat('en-IN',{maximumFractionDigits:2}).format(n)}%`;if(/DAYS?/.test(key))return `${new Intl.NumberFormat('en-IN',{maximumFractionDigits:2}).format(n)} days`;if(/COUNT|QUANTITY|UNITS/.test(key))return new Intl.NumberFormat('en-IN',{maximumFractionDigits:0}).format(n);return new Intl.NumberFormat('en-IN',{maximumFractionDigits:2}).format(n);}
 function analystLabel(column){return String(column).replaceAll('_',' ').toLowerCase().replace(/\b\w/g,c=>c.toUpperCase());}
+function analystCommodityLabel(value){
+ const raw=String(value||'').trim();const low=raw.toLowerCase();
+ const aliases=[
+  [/electrical machinery.*sound recorders|electrical machinery and equipment/,'Electrical machinery & electronics'],
+  [/nuclear reactors.*boilers.*machinery|machinery and mechanical appliances/,'Machinery & mechanical equipment'],
+  [/organic chemicals/,'Organic chemicals'],
+  [/plastics and articles/,'Plastics & plastic articles'],
+  [/iron and steel/,'Iron & steel'],
+  [/vehicles other than railway/,'Vehicles & automotive equipment'],
+  [/optical.*photographic.*medical/,'Optical, medical & precision instruments'],
+  [/pharmaceutical products/,'Pharmaceutical products']
+ ];
+ const hit=aliases.find(([re])=>re.test(low));if(hit)return hit[1];
+ const first=raw.split(';')[0].trim();
+ return first.length>68?first.slice(0,65)+'…':first;
+}
 function analystModel(result){
  const columns=result?.columns||[],rows=result?.rows||[];const numeric=columns.filter(c=>rows.some(r=>analystNumber(r[c])!==null));const dimensions=columns.filter(c=>!numeric.includes(c));
  const metric=numeric.find(c=>/EXPOSURE|IMPORT_VALUE|EXPORT_VALUE|TRADE_VALUE|PO_VALUE|REVENUE|COST|AMOUNT/.test(String(c).toUpperCase()))||numeric.find(c=>/PCT|PERCENT|RATE|DAYS/.test(String(c).toUpperCase()))||numeric.find(c=>/COUNT|QUANTITY|UNITS/.test(String(c).toUpperCase()))||numeric[0];
@@ -108,7 +124,7 @@ function analystNarrative(question,result,cortexText=''){
        const totalText=analystFormat(totalCol||'TOTAL_IMPORT_VALUE',totalValue);
        const commodityText=groups.slice(0,3).map(g=>{
          const share=g.share>0?g.share:(totalValue?g.value/totalValue*100:null);
-         return `<strong>${e(g.label)}</strong> (${analystFormat(commodityValueCol,g.value)}${share!==null?`, ${new Intl.NumberFormat('en-IN',{maximumFractionDigits:1}).format(share)}%`:''})`;
+         return `<strong>${e(analystCommodityLabel(g.label))}</strong> (${analystFormat(commodityValueCol,g.value)}${share!==null?`, ${new Intl.NumberFormat('en-IN',{maximumFractionDigits:1}).format(share)}%`:''})`;
        }).join(', ');
        const parts=[`Rest of World represents <strong>${totalText}</strong> of India import exposure in 2026.`,`Largest commodity concentrations: ${commodityText}.`];
        const sea=seaCol?analystNumber(firstRow[seaCol]):null;
@@ -137,6 +153,51 @@ function analystNarrative(question,result,cortexText=''){
      }
    }
  }
+ const supplierRiskIntent=/\b(supplier|vendor)\b/i.test(q)&&/\b(worry|risk|highest|most|rank|priority|exposure)\b/i.test(q);
+ if(supplierRiskIntent){
+  const cols=m.columns.map(c=>String(c));const find=(patterns)=>cols.find(c=>{const u=c.toUpperCase();return patterns.some(p=>p.test(u));});
+  const supplierCol=find([/SUPPLIER_NAME/,/^SUPPLIER$/,/VENDOR_NAME/]);
+  if(supplierCol&&m.rows.length){
+   const poValueCol=find([/TOTAL_PO_VALUE_USD/,/^PO_VALUE_USD$/,/PO_VALUE/]);
+   const delayedCountCol=find([/DELAYED_PO_COUNT/]);
+   const delayedValueCol=find([/DELAYED_PO_VALUE_USD/]);
+   const highRiskValueCol=find([/HIGH_OPERATIONAL_RISK_PO_VALUE_USD/]);
+   const weatherValueCol=find([/WEATHER_LINKED_PO_VALUE_USD/]);
+   const coverCol=find([/MINIMUM_DAYS_OF_COVER/,/MIN.*DAYS.*COVER/,/DAYS_OF_COVER/]);
+   const tierCol=find([/SUPPLIER_TIER/]),criticalityCol=find([/SUPPLIER_CRITICALITY/]),countryCol=find([/ORIGIN_COUNTRY/]),riskLevelCol=find([/OPERATIONAL_RISK_LEVEL/]);
+   const norm=(value,max,invert=false)=>{const n=analystNumber(value);if(n===null||!max)return 0;const x=Math.max(0,Math.min(1,n/max));return invert?1-x:x;};
+   const maxOf=col=>col?Math.max(...m.rows.map(r=>analystNumber(r[col])||0),0):0;
+   const maxPo=maxOf(poValueCol),maxDelayCount=maxOf(delayedCountCol),maxDelayValue=maxOf(delayedValueCol),maxHighRisk=maxOf(highRiskValueCol),maxWeather=maxOf(weatherValueCol),maxCover=maxOf(coverCol);
+   const ranked=m.rows.map(r=>{
+    const score=(
+      norm(r[poValueCol],maxPo)*0.20+
+      norm(r[delayedCountCol],maxDelayCount)*0.15+
+      norm(r[delayedValueCol],maxDelayValue)*0.20+
+      norm(r[highRiskValueCol],maxHighRisk)*0.20+
+      norm(r[weatherValueCol],maxWeather)*0.10+
+      norm(r[coverCol],maxCover,true)*0.15
+    )*100;
+    return {r,score};
+   }).sort((a,b)=>b.score-a.score);
+   const top=ranked[0];
+   if(top){
+    const r=top.r;const facts=[];
+    if(poValueCol&&analystNumber(r[poValueCol])!==null)facts.push(`PO exposure <strong>${analystFormat(poValueCol,r[poValueCol])}</strong>`);
+    if(delayedCountCol&&analystNumber(r[delayedCountCol])!==null)facts.push(`<strong>${analystFormat(delayedCountCol,r[delayedCountCol])}</strong> delayed POs`);
+    if(delayedValueCol&&analystNumber(r[delayedValueCol])!==null)facts.push(`delayed value <strong>${analystFormat(delayedValueCol,r[delayedValueCol])}</strong>`);
+    if(highRiskValueCol&&analystNumber(r[highRiskValueCol])!==null)facts.push(`high-risk PO value <strong>${analystFormat(highRiskValueCol,r[highRiskValueCol])}</strong>`);
+    if(weatherValueCol&&analystNumber(r[weatherValueCol])!==null)facts.push(`weather-linked value <strong>${analystFormat(weatherValueCol,r[weatherValueCol])}</strong>`);
+    if(coverCol&&analystNumber(r[coverCol])!==null)facts.push(`minimum cover <strong>${analystFormat(coverCol,r[coverCol])}</strong>`);
+    const descriptors=[];
+    if(tierCol&&r[tierCol])descriptors.push(e(r[tierCol]));
+    if(criticalityCol&&r[criticalityCol])descriptors.push(`${e(r[criticalityCol])} criticality`);
+    if(countryCol&&r[countryCol])descriptors.push(e(r[countryCol]));
+    if(riskLevelCol&&r[riskLevelCol])descriptors.push(`${e(r[riskLevelCol])} operational risk`);
+    const next=ranked.slice(1,3).map(x=>`${e(x.r[supplierCol])} (${x.score.toFixed(0)})`).join(', ');
+    return `<strong>${e(r[supplierCol])}</strong> ranks highest on OntoTrail's composite supplier-risk view with a score of <strong>${top.score.toFixed(0)}/100</strong>${descriptors.length?` (${descriptors.join(' · ')})`:''}. ${facts.length?`Key drivers: ${facts.join(', ')}.`:''}${next?` The next highest suppliers are ${next}.`:''} The score is a decision-support composite derived from the returned governed metrics, not a standalone prediction.`;
+   }
+  }
+ }
  const exposureIntent=/\b(import|export|trade)\b/i.test(q)&&/\b(exposure|dependenc|concentrat|risk|explain)\b/i.test(q);
  if(exposureIntent){
   const cols=m.columns.map(c=>String(c));const find=(patterns,exclude=[])=>cols.find(c=>{const u=c.toUpperCase();return patterns.some(p=>p.test(u))&&!exclude.some(p=>p.test(u));});
@@ -153,13 +214,14 @@ function analystNarrative(question,result,cortexText=''){
       for(const x of rows){const v=analystNumber(x.r[col]);if(v===null)continue;const coverage=weatherCoverageCol?analystNumber(x.r[weatherCoverageCol]):null;const w=coverageWeighted&&coverage!==null?x.value*(coverage/100):x.value;if(w<=0)continue;num+=v*w;den+=w;}
       return den?num/den:null;
     };
-    const top=rows.slice(0,3).map(x=>{const share=total?x.value/total*100:0;return `<strong>${e(x.label)}</strong> ${analystFormat(valueCol,x.value)} (${new Intl.NumberFormat('en-IN',{maximumFractionDigits:1}).format(share)}%)`;}).join(', ');
+    const top=rows.slice(0,3).map(x=>{const share=total?x.value/total*100:0;return `<strong>${e(analystCommodityLabel(x.label))}</strong> ${analystFormat(valueCol,x.value)} (${new Intl.NumberFormat('en-IN',{maximumFractionDigits:1}).format(share)}%)`;}).join(', ');
     const parts=[`Total modeled ${/export/i.test(q)?'export':'import'} exposure is <strong>${analystFormat(valueCol,total)}</strong>.`,`Top commodity concentrations: ${top}.`];
     const sea=weighted(seaCol),air=weighted(airCol),land=weighted(landCol);const transport=[];
     if(sea!==null)transport.push(`<strong>${new Intl.NumberFormat('en-IN',{maximumFractionDigits:1}).format(sea)}%</strong> sea`);
     if(air!==null)transport.push(`<strong>${new Intl.NumberFormat('en-IN',{maximumFractionDigits:1}).format(air)}%</strong> air`);
     if(land!==null)transport.push(`<strong>${new Intl.NumberFormat('en-IN',{maximumFractionDigits:1}).format(land)}%</strong> land`);
     if(transport.length)parts.push(`Estimated transport mix across the returned commodity exposure: ${transport.join(', ')}.`);
+    if(land!==null&&land>50&&/\bchina\b/i.test(q))parts.push('Note: TradePrism classifies more than half of this value as land mode. Because that is counter-intuitive for China–India trade, treat it as a Marketplace modal-classification result and review the generated SQL/audit trail before using it operationally.');
     const coverage=weighted(weatherCoverageCol),risk=weighted(weatherRiskCol,true);const weatherValue=weatherValueCol?rows.reduce((n,x)=>n+(analystNumber(x.r[weatherValueCol])||0),0):null;
     if(coverage!==null&&coverage>0){
       let weather=`Weather intelligence covers about <strong>${new Intl.NumberFormat('en-IN',{maximumFractionDigits:1}).format(coverage)}%</strong> of the returned exposure`;
@@ -185,9 +247,6 @@ function analystNarrative(question,result,cortexText=''){
    return `${parts.join(' · ')}.${delta}`;
   }
  }
- if(cleanedCortex.length>=40){
-  return e(cleanedCortex).replace(/\n/g,'<br>');
- }
  if(m.metric&&m.dimension){
   const rows=[...m.rows].filter(r=>analystNumber(r[m.metric])!==null);
   const sorted=rows.sort((a,b)=>asksLowest?analystNumber(a[m.metric])-analystNumber(b[m.metric]):analystNumber(b[m.metric])-analystNumber(a[m.metric]));
@@ -200,8 +259,9 @@ function analystNarrative(question,result,cortexText=''){
   }
  }
  if(m.metric&&m.rows.length===1)return `The result is <strong>${analystFormat(m.metric,m.rows[0][m.metric])}</strong>.`;
- if(cleanedCortex)return e(cleanedCortex);
- return `I found <strong>${m.rows.length}</strong> matching records for your question.`;
+ const looksLikePlan=/^(which|show|rank|compare|find|list|calculate|explain)\b/i.test(cleanedCortex)||/\bcovering:|\binclude supplier|\bshow top\b/i.test(cleanedCortex);
+ if(cleanedCortex&&!looksLikePlan)return e(cleanedCortex).replace(/\n/g,'<br>');
+ return `I found <strong>${m.rows.length}</strong> governed records. Open the table and audit trail below for the supporting evidence.`;
 }
 function splitCompoundQuestion(question){
  const q=String(question||'').trim();
@@ -232,7 +292,7 @@ function recommendationFor(question,result){
 }
 function analystFilters(result,id){const m=analystModel(result);const dims=m.dimensions.filter(c=>new Set(m.rows.map(r=>String(r[c]??''))).size>1).slice(0,3);if(!dims.length)return '';return `<div class="analyst-filters" data-result-id="${id}">${dims.map(c=>{const vals=[...new Set(m.rows.map(r=>String(r[c]??'')).filter(Boolean))].sort();return `<label>${e(analystLabel(c))}<select data-analyst-filter="${e(c)}"><option value="">All</option>${vals.map(v=>`<option>${e(v)}</option>`).join('')}</select></label>`}).join('')}</div>`;}
 function analystTable(result,id){const m=analystModel(result);if(!m.rows.length)return '';return `<div class="analyst-table-wrap"><table class="analyst-table" data-analyst-table="${id}"><thead><tr>${m.columns.map(c=>`<th>${e(analystLabel(c))}</th>`).join('')}</tr></thead><tbody>${m.rows.slice(0,50).map(r=>`<tr>${m.columns.map(c=>`<td data-col="${e(c)}" data-raw="${e(r[c]??'')}">${analystFormat(c,r[c])}</td>`).join('')}</tr>`).join('')}</tbody></table></div>`;}
-function analystChart(result,id,question=''){const m=analystModel(result);if(!m.metric||!m.dimension)return '';const asc=/\b(lowest|minimum|min\.?|smallest|least|bottom)\b/i.test(String(question));const items=m.rows.map(r=>({label:String(r[m.dimension]??''),value:analystNumber(r[m.metric]),scenario:m.dimensions.includes('SCENARIO')?String(r.SCENARIO??''):''})).filter(x=>x.label&&x.value!==null).sort((a,b)=>asc?a.value-b.value:b.value-a.value).slice(0,10);if(items.length<2)return '';const max=Math.max(...items.map(x=>Math.abs(x.value)),1);return `<section class="analyst-viz" data-analyst-chart="${id}"><div class="viz-head"><div><span class="eyebrow">DYNAMIC VISUALIZATION</span><strong>${e(analystLabel(m.metric))} by ${e(analystLabel(m.dimension))}</strong></div><span>${items.length} shown</span></div><div class="bar-chart">${items.map(x=>`<div class="bar-row" data-chart-label="${e(x.label)}"><span title="${e(x.label)}">${e(x.label)}</span><div class="bar-track"><i style="width:${Math.max(2,Math.abs(x.value)/max*100).toFixed(1)}%"></i></div><b>${analystFormat(m.metric,x.value)}</b></div>`).join('')}</div></section>`;}
+function analystChart(result,id,question=''){const m=analystModel(result);if(!m.metric||!m.dimension)return '';const asc=/\b(lowest|minimum|min\.?|smallest|least|bottom)\b/i.test(String(question));const items=m.rows.map(r=>({label:String(r[m.dimension]??''),value:analystNumber(r[m.metric]),scenario:m.dimensions.includes('SCENARIO')?String(r.SCENARIO??''):''})).filter(x=>x.label&&x.value!==null).sort((a,b)=>asc?a.value-b.value:b.value-a.value).slice(0,10);if(items.length<2)return '';const max=Math.max(...items.map(x=>Math.abs(x.value)),1);return `<section class="analyst-viz" data-analyst-chart="${id}"><div class="viz-head"><div><span class="eyebrow">DYNAMIC VISUALIZATION</span><strong>${e(analystLabel(m.metric))} by ${e(analystLabel(m.dimension))}</strong></div><span>${items.length} shown</span></div><div class="bar-chart">${items.map(x=>`<div class="bar-row" data-chart-label="${e(analystCommodityLabel(x.label))}"><span title="${e(analystCommodityLabel(x.label))}">${e(analystCommodityLabel(x.label))}</span><div class="bar-track"><i style="width:${Math.max(2,Math.abs(x.value)/max*100).toFixed(1)}%"></i></div><b>${analystFormat(m.metric,x.value)}</b></div>`).join('')}</div></section>`;}
 function applyAnalystFilters(container){const selects=[...container.querySelectorAll('[data-analyst-filter]')];const table=container.querySelector('[data-analyst-table]');if(!table)return;for(const tr of table.tBodies[0].rows){const show=selects.every(sel=>!sel.value||[...tr.cells].some(td=>td.dataset.col===sel.dataset.analystFilter&&td.dataset.raw===sel.value));tr.hidden=!show;}const visible=new Set([...table.tBodies[0].rows].filter(r=>!r.hidden).map(r=>[...r.cells][0]?.dataset.raw));container.querySelectorAll('[data-chart-label]').forEach(row=>{if(selects.length)row.hidden=false;});}
 
 function showAssistant(){navigate('analyst');requestAnimationFrame(()=>$('#analyst-question')?.focus());}
