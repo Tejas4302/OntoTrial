@@ -189,3 +189,11 @@ body.analyst-mode .user-question-wrap .user-question{margin-bottom:5px}
 .chat-edit-input{width:100%;background:#fff}
 .chat-edit-actions{display:flex;justify-content:flex-end;gap:8px}
 @media(max-width:760px){.chat-edit-form{width:100%}.assistant-response-actions{margin-top:8px}}
+
+
+/* v2.1.1 — ChatGPT-style prompt actions */
+.user-message-actions{opacity:0;transform:translateY(-2px);transition:opacity .14s ease,transform .14s ease}
+.user-question-wrap:hover .user-message-actions,
+.user-question-wrap:focus-within .user-message-actions{opacity:1;transform:none}
+.user-message-actions .chat-action{font-size:10.5px}
+@media(pointer:coarse){.user-message-actions{opacity:1;transform:none}}

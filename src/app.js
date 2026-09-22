@@ -163,7 +163,7 @@ function createAnalystProject(name){const clean=String(name||'').trim();if(!clea
 function clearAnalystHistory(){const thread=activeAnalystThread();if(!thread)return;thread.html='';thread.title='New chat';thread.updatedAt=new Date().toISOString();saveAnalystWorkspace();chatCount=0;if(view==='analyst'){render();toast('Current chat cleared.');}}
 
 function userQuestionInner(question){
- return `<p class="user-question"><span class="user-question-text">${e(question)}</span></p><div class="chat-message-actions user-message-actions"><button class="chat-action" type="button" data-chat-edit aria-label="Edit message" title="Edit message">Edit</button></div>`;
+ return `<p class="user-question"><span class="user-question-text">${e(question)}</span></p><div class="chat-message-actions user-message-actions"><button class="chat-action" type="button" data-chat-copy-prompt aria-label="Copy prompt" title="Copy prompt">Copy</button><button class="chat-action" type="button" data-chat-share-prompt aria-label="Share prompt" title="Share prompt">Share</button><button class="chat-action" type="button" data-chat-edit aria-label="Edit message" title="Edit message">Edit</button></div>`;
 }
 function ensureChatActions(pair){
  if(!pair)return;
@@ -171,7 +171,7 @@ function ensureChatActions(pair){
  if(q&&!pair.querySelector('.user-question-wrap')){
   const wrap=document.createElement('div');wrap.className='user-question-wrap';q.before(wrap);wrap.append(q);
   if(!q.querySelector('.user-question-text')){const span=document.createElement('span');span.className='user-question-text';span.textContent=q.textContent||'';q.replaceChildren(span);}
-  const actions=document.createElement('div');actions.className='chat-message-actions user-message-actions';actions.innerHTML='<button class="chat-action" type="button" data-chat-edit aria-label="Edit message" title="Edit message">Edit</button>';wrap.append(actions);
+  const actions=document.createElement('div');actions.className='chat-message-actions user-message-actions';actions.innerHTML='<button class="chat-action" type="button" data-chat-copy-prompt aria-label="Copy prompt" title="Copy prompt">Copy</button><button class="chat-action" type="button" data-chat-share-prompt aria-label="Share prompt" title="Share prompt">Share</button><button class="chat-action" type="button" data-chat-edit aria-label="Edit message" title="Edit message">Edit</button>';wrap.append(actions);
  }
  const answer=pair.querySelector('.assistant-answer');
  if(answer&&!answer.querySelector('.assistant-response-actions')){
@@ -182,6 +182,31 @@ function ensureChatActions(pair){
 }
 function chatPairQuestion(pair){
  return String(pair?.querySelector('.user-question-text')?.textContent||pair?.querySelector('.user-question')?.textContent||'').trim();
+}
+async function writeClipboard(text){
+ const value=String(text||'').trim();if(!value)return false;
+ try{
+  if(navigator.clipboard?.writeText){await navigator.clipboard.writeText(value);return true;}
+  const ta=document.createElement('textarea');ta.value=value;ta.style.position='fixed';ta.style.opacity='0';document.body.append(ta);ta.select();const ok=document.execCommand('copy');ta.remove();return ok;
+ }catch{return false;}
+}
+async function copyChatPrompt(pair){
+ const question=chatPairQuestion(pair);if(!question)return;
+ const ok=await writeClipboard(question);toast(ok?'Prompt copied.':'Could not copy the prompt.');
+}
+async function shareChatPrompt(pair){
+ const question=chatPairQuestion(pair);if(!question)return;
+ try{
+  if(navigator.share){
+   await navigator.share({title:'OntoTrail prompt',text:question});
+   toast('Prompt shared.');
+   return;
+  }
+ }catch(err){
+  if(err?.name==='AbortError')return;
+ }
+ const ok=await writeClipboard(question);
+ toast(ok?'Sharing is not available here, so the prompt was copied instead.':'Could not share the prompt.');
 }
 function beginChatEdit(pair){
  if(!pair)return;const question=chatPairQuestion(pair);const wrap=pair.querySelector('.user-question-wrap');
@@ -269,6 +294,8 @@ document.addEventListener('click',event=>{const target=event.target.closest('but
   if(target.dataset.order){openOrder(target.dataset.order);return;}
   if(target.dataset.source){event.preventDefault();if($('#assistant-dialog').open)$('#assistant-dialog').close();sourceRecord(target.dataset.source);return;}
   if(target.dataset.nav){event.preventDefault();navigate(target.dataset.nav);return;}
+  if(target.dataset.chatCopyPrompt!==undefined){event.preventDefault();void copyChatPrompt(target.closest('.chat-pair'));return;}
+  if(target.dataset.chatSharePrompt!==undefined){event.preventDefault();void shareChatPrompt(target.closest('.chat-pair'));return;}
   if(target.dataset.chatEdit!==undefined){event.preventDefault();beginChatEdit(target.closest('.chat-pair'));return;}
   if(target.dataset.chatEditCancel!==undefined){event.preventDefault();cancelChatEdit(target.closest('.chat-pair'));return;}
   if(target.dataset.chatCopy!==undefined){event.preventDefault();void copyChatResponse(target.closest('.chat-pair'));return;}
