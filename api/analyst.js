@@ -63,9 +63,17 @@ export default async function handler(req,res){
   if(!question||question.length>MAX_QUESTION)return send(res,400,{error:`Enter a question between 1 and ${MAX_QUESTION} characters.`});
 
   const rowIntent=/\b(rest of world|row)\b/i.test(question);
-  const governedQuestion=rowIntent
-    ? question + "\n\nGoverned interpretation: Rest of World/ROW is the aggregate origin identified by ORIGIN_ISO = 'ROW'. You MUST filter ORIGIN_ISO = 'ROW' and must not replace it with a ranking of other countries. If the question asks for commodity concentration, include a commodity breakdown rather than only a commodity count. Treat ROW as an aggregate geography; only report weather if aggregate-row coverage exists and do not infer weather from constituent countries."
-    : question;
+  const responseGuidance=[
+    "Answer the user's exact business question, not merely the shape of the returned table.",
+    "Lead with a concise executive answer, then explain the most decision-relevant drivers.",
+    "When the question asks about exposure, concentration, dependency or risk, explicitly cover the requested dimensions when data is available (for example commodity concentration, transport dependency and weather risk).",
+    "Use business-readable labels and units. Avoid database-style phrasing such as 'OVERALL has the leading metric' unless the user explicitly asks for a ranking.",
+    "Do not invent data that is absent from the semantic view or result set. Clearly state when a requested dimension is unavailable."
+  ].join(" ");
+  const rowGuidance=rowIntent
+    ? " Governed interpretation: Rest of World/ROW is the aggregate origin identified by ORIGIN_ISO = 'ROW'. You MUST filter ORIGIN_ISO = 'ROW' and must not replace it with a ranking of other countries. If the question asks for commodity concentration, include a commodity breakdown rather than only a commodity count. Treat ROW as an aggregate geography; only report weather if aggregate-row coverage exists and do not infer weather from constituent countries."
+    : "";
+  const governedQuestion=question+"\n\nResponse requirements: "+responseGuidance+rowGuidance;
   const novaIntent=/\b(nova|supplier|vendor|purchase order|\bpo\b|inventory|days? of cover|stock cover|shipment|material|component|plant|delayed po|operational risk)\b/i.test(question);
   const semanticView=novaIntent?novaSemanticView:tradeSemanticView;
 
