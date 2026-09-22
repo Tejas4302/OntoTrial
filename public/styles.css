@@ -199,101 +199,132 @@ body.analyst-mode .user-question-wrap .user-question{margin-bottom:5px}
 @media(pointer:coarse){.user-message-actions{opacity:1;transform:none}}
 
 
-/* v2.5.2 — alignment and layout polish across trade-risk workspace */
-.page-heading{align-items:flex-start}
+/* v2.5.3 — unified layout contract */
+#main{max-width:1600px}
+.page-heading{display:grid;grid-template-columns:minmax(0,1fr) auto;align-items:start;gap:28px;margin-bottom:28px}
 .page-heading>div:first-child{min-width:0;max-width:980px}
 .page-heading .subtitle{max-width:900px;line-height:1.65}
-.page-heading .actions{padding-top:2px}
+.page-heading .actions{display:flex;align-items:flex-start;justify-content:flex-end;gap:10px;padding-top:2px}
 
-.metric-grid{align-items:stretch}
-.metric{display:flex;flex-direction:column;min-height:164px}
-.metric-label{min-height:34px;align-items:flex-start}
-.metric-number{margin-top:auto;padding-top:8px}
-.metric>span{min-height:32px}
+/* Metric cards: same internal rhythm on every page. */
+.metric-grid{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:16px;align-items:stretch;margin-bottom:24px}
+.metric{display:grid;grid-template-rows:minmax(34px,auto) auto minmax(32px,1fr);align-content:start;min-width:0;min-height:172px;padding:20px}
+.metric-label{min-width:0;align-items:flex-start}
+.metric-number{margin:8px 0 7px;padding:0;align-self:start}
+.metric>span{align-self:start;overflow-wrap:anywhere}
 
-.panel-heading{align-items:flex-start}
+/* Panel headings and content edges use one alignment. */
+.panel-heading{display:grid;grid-template-columns:minmax(0,1fr) auto;align-items:start;gap:20px;padding:22px}
 .panel-heading>div:first-child{min-width:0}
 .panel-heading h2,.panel-heading p{overflow-wrap:anywhere}
-.panel-heading>.text-button,.panel-heading>.secondary,.panel-heading>.primary,.panel-heading>.subtle-label{flex:0 0 auto}
+.panel-heading>.text-button,.panel-heading>.secondary,.panel-heading>.primary,.panel-heading>.subtle-label{align-self:start;white-space:nowrap}
 
-.overview-grid,.scenario-layout,.guide-grid,.persona-grid,.metric-governance-grid,.document-grid,.record-grid{align-items:stretch}
-.overview-grid>.panel,.scenario-layout>.panel,.guide-grid>.panel{height:100%}
+/* Primary two-column sections. */
+.overview-grid{grid-template-columns:minmax(0,1.55fr) minmax(320px,.9fr);gap:22px;align-items:stretch}
+.overview-grid>.panel{height:100%;margin-bottom:0}
+.scenario-layout{grid-template-columns:minmax(0,1.55fr) minmax(320px,.8fr);gap:22px;align-items:stretch}
+.scenario-layout>.panel{height:100%;margin-bottom:0}
+.preview-panel{align-self:stretch}
 
-.supplier-row{align-items:center}
+/* Reusable row alignment. */
+.supplier-row{display:grid;grid-template-columns:33px minmax(0,1fr) auto;align-items:center;gap:12px}
+.supplier-row:not(:has(>button)){grid-template-columns:33px minmax(0,1fr)}
+.supplier-copy{min-width:0}
 .supplier-copy strong,.supplier-copy small{overflow-wrap:anywhere}
-.supplier-row>.text-button{flex:0 0 auto;margin-left:auto;white-space:nowrap}
+.supplier-row>.text-button{justify-self:end;white-space:nowrap}
 
-.saved-grid{align-items:stretch}
-.saved-card{display:flex;flex-direction:column;min-height:100%}
-.saved-card>p{line-height:1.65}
-.saved-card .preview-list{margin-top:8px}
-.saved-card>button,.saved-card>.secondary,.saved-card>.primary{margin-top:auto;align-self:flex-start}
+/* Scenario cards have identical content rows and button baselines. */
+.saved-grid{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:16px;align-items:stretch;padding:0 22px 22px}
+.saved-card{display:grid;grid-template-rows:auto minmax(42px,auto) minmax(78px,auto) 1fr auto;min-width:0;height:100%;padding:18px}
+.saved-card .eyebrow{align-self:start}
+.saved-card h3{margin:0 0 8px;line-height:1.45}
+.saved-card>p{margin:0 0 10px;line-height:1.65}
+.saved-card .preview-list{align-self:start;margin:0 0 14px}
+.saved-card>button{justify-self:start;align-self:end;margin-top:10px}
 
-.preview-list>div{align-items:flex-start}
-.preview-list dt{min-width:0;line-height:1.45}
-.preview-list dd{line-height:1.45}
+/* Definition lists: labels and values align to a stable two-column grid. */
+.preview-list>div{display:grid;grid-template-columns:minmax(0,1fr) minmax(110px,42%);align-items:start;gap:18px}
+.preview-list dt{line-height:1.45;min-width:0}
+.preview-list dd{max-width:none;line-height:1.45;text-align:right;min-width:0;overflow-wrap:anywhere}
 
+/* Tables. */
 .table-scroll table{table-layout:auto}
 th,td{vertical-align:middle}
 th:first-child,td:first-child{padding-left:22px}
 th:last-child,td:last-child{padding-right:22px}
 td .text-button{white-space:nowrap}
 
-.governance-flow{align-items:center}
-.governance-flow .icon{flex:0 0 auto}
-.governance-flow span{display:inline-flex;align-items:center;min-height:38px;text-align:center}
-
-.document-grid{align-items:stretch}
-.document-card{height:100%}
+/* Data source cards. */
+.document-grid{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:18px;align-items:stretch}
+.document-card{height:100%;min-width:0}
 .document-footer{align-items:flex-start}
 .document-footer>span{line-height:1.45;overflow-wrap:anywhere}
 .document-footer .text-button{flex:0 0 auto}
 
-.decision-summary{align-items:stretch}
-.decision-summary>article{height:100%;display:flex;flex-direction:column;justify-content:flex-start}
-.decision-summary>article strong{margin-top:auto}
-.decision-board{align-items:start}
-.decision-column{min-width:0}
-.decision-card{overflow-wrap:anywhere}
-.decision-card h4{line-height:1.45}
-.decision-card-problem{line-height:1.6}
-.decision-meta{align-items:start}
-.decision-meta>span{min-width:0}
-.decision-meta strong,.decision-meta small{overflow-wrap:anywhere}
-.decision-card-actions{align-items:center;flex-wrap:wrap;row-gap:8px}
-
-.guide-columns>div,.metric-definition,.persona-card{min-width:0}
-.metric-definition{height:100%}
-.persona-card{height:100%}
+/* Governance. */
+.governance-flow{align-items:center}
+.governance-flow .icon{flex:0 0 auto}
+.governance-flow span{display:inline-flex;align-items:center;justify-content:center;min-height:40px;text-align:center}
+.persona-grid,.metric-governance-grid{align-items:stretch}
+.persona-card,.metric-definition{height:100%;min-width:0}
 .persona-card .secondary{margin-top:auto;align-self:flex-start}
 
+/* Decision Board: one consistent sizing model, replacing old 4/5-column conflicts. */
+.decision-summary{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:14px;align-items:stretch;margin:18px 0 22px}
+.decision-summary>article{display:grid;grid-template-rows:auto auto 1fr;align-content:start;min-height:132px;height:100%;padding:18px}
+.decision-summary>article strong{margin:7px 0 4px}
+.decision-summary>article small{align-self:start;line-height:1.45}
+
+.decision-board{display:grid;grid-template-columns:repeat(5,300px);gap:16px;align-items:start;overflow-x:auto;padding:4px 2px 14px;scrollbar-gutter:stable}
+.decision-column{display:flex;flex-direction:column;min-width:300px;min-height:320px;padding:14px}
+.decision-column-head{min-height:28px}
+.decision-card{display:flex;flex-direction:column;min-width:0;padding:16px;margin-bottom:12px;overflow-wrap:anywhere}
+.decision-card-top{min-height:25px}
+.decision-card h4{margin:10px 0 8px;line-height:1.45}
+.decision-card-problem{min-height:60px;line-height:1.55!important}
+.decision-meta{display:grid;grid-template-columns:1fr 1fr;align-items:start;gap:12px 14px;padding-top:6px}
+.decision-meta>span{min-width:0}
+.decision-meta strong,.decision-meta small{display:block;overflow-wrap:anywhere}
+.decision-impact{min-height:62px}
+.decision-card-actions{display:flex;align-items:center;justify-content:flex-start;flex-wrap:wrap;gap:8px;margin-top:auto;padding-top:12px;border-top:1px solid #edf2f4}
+
+/* Dialog form alignment. */
+.decision-form-grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:14px 18px}
+.decision-form .field-label{min-width:0}
+.decision-form .text-input{width:100%}
+
+/* Analyst header. */
 .analyst-page-head{align-items:flex-start}
 .analyst-page-head>div:first-child{min-width:0}
 .analyst-page-actions{align-items:flex-start}
 
+/* Responsive contract */
 @media(max-width:1180px){
- .metric-grid{grid-template-columns:repeat(2,minmax(0,1fr))}
- .overview-grid,.scenario-layout{grid-template-columns:1fr}
- .saved-grid{grid-template-columns:1fr 1fr}
+  .metric-grid{grid-template-columns:repeat(2,minmax(0,1fr))}
+  .overview-grid,.scenario-layout{grid-template-columns:1fr}
+  .saved-grid{grid-template-columns:repeat(2,minmax(0,1fr))}
+  .document-grid{grid-template-columns:repeat(2,minmax(0,1fr))}
+  .decision-summary{grid-template-columns:repeat(2,minmax(0,1fr))}
 }
 @media(max-width:820px){
- .page-heading{flex-direction:column;gap:16px}
- .page-heading .actions{width:100%;flex-wrap:wrap}
- .metric-grid,.saved-grid,.document-grid,.guide-grid,.persona-grid,.metric-governance-grid{grid-template-columns:1fr}
- .metric{min-height:0}
- .metric-label,.metric>span{min-height:0}
- .panel-heading{flex-direction:column;align-items:flex-start}
- .panel-heading>.text-button,.panel-heading>.secondary,.panel-heading>.primary,.panel-heading>.subtle-label{align-self:flex-start}
- .supplier-row{align-items:flex-start}
- .supplier-row>.text-button{margin-left:0}
- .governance-flow{align-items:flex-start}
- .governance-flow .icon{transform:rotate(90deg)}
+  .page-heading{grid-template-columns:1fr;gap:16px}
+  .page-heading .actions{justify-content:flex-start;flex-wrap:wrap}
+  .metric-grid,.saved-grid,.document-grid,.persona-grid,.metric-governance-grid,.decision-summary{grid-template-columns:1fr}
+  .metric{min-height:0}
+  .panel-heading{grid-template-columns:1fr;gap:10px}
+  .panel-heading>.text-button,.panel-heading>.secondary,.panel-heading>.primary,.panel-heading>.subtle-label{justify-self:start}
+  .supplier-row{grid-template-columns:33px minmax(0,1fr)}
+  .supplier-row>.text-button{grid-column:2;justify-self:start;margin-top:2px}
+  .governance-flow{align-items:flex-start}
+  .governance-flow .icon{transform:rotate(90deg)}
+  .decision-form-grid{grid-template-columns:1fr}
 }
 @media(max-width:620px){
- #main{padding-left:16px;padding-right:16px}
- .panel-heading,.toolbar{padding-left:16px;padding-right:16px}
- .saved-grid,.document-grid,.record-grid{padding-left:16px;padding-right:16px}
- .metric-grid{gap:12px}
- .metric{padding:16px}
- .metric-number{font-size:30px}
+  #main{padding-left:16px;padding-right:16px}
+  .panel-heading,.toolbar{padding-left:16px;padding-right:16px}
+  .saved-grid,.document-grid,.record-grid{padding-left:16px;padding-right:16px}
+  .metric{padding:16px}
+  .metric-number{font-size:30px}
+  .decision-board{grid-template-columns:repeat(5,270px)}
+  .decision-column{min-width:270px}
 }
