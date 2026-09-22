@@ -76,28 +76,28 @@ const INTENTS = [
   {id:'weather_risk', domain:'trade', re:/\b(weather|storm|flood|temperature|external risk|climate)\b/i,
     dimensions:['WEATHER_RISK_LEVEL','WEATHER_COVERAGE_STATUS'], metrics:['WEATHER_COVERAGE_PCT','ELEVATED_WEATHER_RISK_TRADE_VALUE_USD','TRADE_WEIGHTED_WEATHER_RISK_SCORE','TRADE_WEIGHTED_AFFECTED_LOCATION_PCT'],
     guidance:'State weather coverage before interpreting weather risk; never infer uncovered risk.'},
-  {id:'supplier_risk', domain:'nova', re:/\b(supplier|vendor|tier 1|tier 2)\b/i,
+  {id:'supplier_risk', domain:'nova', re:/\b(suppliers?|vendors?|tier 1|tier 2)\b/i,
     dimensions:['SUPPLIER_NAME','SUPPLIER_TIER','SUPPLIER_CRITICALITY','ORIGIN_COUNTRY','OPERATIONAL_RISK_LEVEL'], metrics:['TOTAL_PO_VALUE_USD','DELAYED_PO_COUNT','DELAYED_PO_VALUE_USD','MINIMUM_DAYS_OF_COVER','HIGH_OPERATIONAL_RISK_PO_VALUE_USD','WEATHER_LINKED_PO_VALUE_USD'],
     guidance:'Assess supplier risk using exposure, delay status, inventory cover and external risk together; do not rank on PO value alone unless asked.'},
   {id:'nova_weather_risk', domain:'nova', re:/\b(weather|storm|flood|external weather|weather-linked)\b/i,
     dimensions:['SUPPLIER_NAME','ORIGIN_COUNTRY','WEATHER_RISK_LEVEL','MATERIAL_NAME'], metrics:['WEATHER_LINKED_PO_VALUE_USD','TOTAL_PO_VALUE_USD','MINIMUM_DAYS_OF_COVER'],
     guidance:'For Nova questions, treat weather as external Marketplace context. Quantify weather-linked PO exposure and combine it with supplier/material and inventory evidence; do not infer weather risk where the enrichment is unavailable.'},
-  {id:'purchase_orders', domain:'nova', re:/\b(purchase order|\bpo\b|ordered|received|outstanding|delayed po)\b/i,
+  {id:'purchase_orders', domain:'nova', re:/\b(purchase orders?|pos?|ordered|received|outstanding|delayed pos?)\b/i,
     dimensions:['PO_ID','PO_STATUS','PROMISED_DATE','SUPPLIER_NAME','MATERIAL_NAME'], metrics:['PURCHASE_ORDER_COUNT','TOTAL_PO_VALUE_USD','DELAYED_PO_COUNT','DELAYED_PO_VALUE_USD','TOTAL_ORDER_QUANTITY','TOTAL_RECEIVED_QUANTITY','OUTSTANDING_QUANTITY'],
     guidance:'Explain PO status, outstanding quantity/value and due-date risk when relevant.'},
   {id:'inventory_health', domain:'nova', re:/\b(inventory|stock|days? of cover|doi|cover|safety stock)\b/i,
     dimensions:['MATERIAL_NAME','PLANT_NAME','INVENTORY_RISK_LEVEL','MATERIAL_CRITICALITY'], metrics:['MINIMUM_DAYS_OF_COVER','AVERAGE_DAYS_OF_COVER','LOW_COVER_PO_COUNT','OUTSTANDING_QUANTITY'],
     guidance:'Prioritize low-cover critical materials and connect them to delayed or outstanding supply when data supports it.'},
-  {id:'shipment_logistics', domain:'nova', re:/\b(shipment|eta|in transit|booked|logistics|transport mode)\b/i,
+  {id:'shipment_logistics', domain:'nova', re:/\b(shipments?|eta|in transit|booked|logistics|transport mode)\b/i,
     dimensions:['SHIPMENT_ID','SHIPMENT_STATUS','TRANSPORT_MODE','ETA_DATE','ORIGIN_COUNTRY','SUPPLIER_NAME'], metrics:['OUTSTANDING_QUANTITY','TOTAL_PO_VALUE_USD'],
     guidance:'Explain current shipment state, ETA and material/PO exposure; distinguish Nova shipment mode from external market sea dependency.'},
-  {id:'material_risk', domain:'nova', re:/\b(material|component|part|battery|inverter|motor|semiconductor|connector|pump|thermal)\b/i,
+  {id:'material_risk', domain:'nova', re:/\b(materials?|components?|parts?|battery|inverter|motor|semiconductors?|connectors?|pumps?|thermal)\b/i,
     dimensions:['MATERIAL_NAME','COMMODITY_GROUP','MATERIAL_CRITICALITY','SUPPLIER_NAME','PLANT_NAME'], metrics:['TOTAL_PO_VALUE_USD','OUTSTANDING_QUANTITY','MINIMUM_DAYS_OF_COVER','HIGH_OPERATIONAL_RISK_PO_VALUE_USD'],
     guidance:'Combine material criticality, inventory cover, open quantity and supplier exposure.'},
-  {id:'plant_risk', domain:'nova', re:/\b(plant|factory|bengaluru|pune|chennai|hyderabad)\b/i,
+  {id:'plant_risk', domain:'nova', re:/\b(plants?|factor(?:y|ies)|bengaluru|pune|chennai|hyderabad)\b/i,
     dimensions:['PLANT_NAME','MATERIAL_NAME','SUPPLIER_NAME','OPERATIONAL_RISK_LEVEL'], metrics:['TOTAL_PO_VALUE_USD','DELAYED_PO_COUNT','MINIMUM_DAYS_OF_COVER','HIGH_OPERATIONAL_RISK_PO_VALUE_USD'],
     guidance:'Summarize plant exposure and identify the materials/suppliers driving it.'},
-  {id:'risk_summary', domain:'nova', re:/\b(operational risk|supply risk|high risk|at risk|risk exposure)\b/i,
+  {id:'risk_summary', domain:'nova', re:/\b(operational risk|supply risk|high[- ]risk|at[- ]risk|risk exposure)\b/i,
     dimensions:['OPERATIONAL_RISK_LEVEL','INVENTORY_RISK_LEVEL','SUPPLIER_NAME','MATERIAL_NAME'], metrics:['HIGH_OPERATIONAL_RISK_PO_VALUE_USD','DELAYED_PO_VALUE_USD','WEATHER_LINKED_PO_VALUE_USD','MINIMUM_DAYS_OF_COVER'],
     guidance:'Triangulate operational, inventory and external weather risk; avoid a one-metric verdict.'}
 ];
@@ -105,12 +105,13 @@ const INTENTS = [
 export function classifyQuestion(question=''){
   const q=String(question||'').trim();
   const matched=INTENTS.filter(x=>x.re.test(q));
-  const opsSignal=/\b(nova|supplier|vendor|purchase order|\bpo\b|inventory|stock|shipment|material|component|plant|factory|days? of cover|operational risk)\b/i.test(q);
+  const opsSignal=/\b(nova|suppliers?|vendors?|purchase orders?|pos?|inventory|stock|shipments?|materials?|components?|plants?|factor(?:y|ies)|days? of cover|operational risk)\b/i.test(q);
   const tradeSignal=/\b(india|import|export|trade|country|china|origin|commodity|hs4|sea dependency|air dependency|weather coverage)\b/i.test(q);
   let domain='trade';
   if(opsSignal)domain='nova';
-  else if(matched.some(x=>x.domain==='nova'))domain='nova';
-  else if(tradeSignal||matched.some(x=>x.domain==='trade'))domain='trade';
+  else if(tradeSignal)domain='trade';
+  else if(matched.some(x=>x.domain==='nova')&&!matched.some(x=>x.domain==='trade'))domain='nova';
+  else if(matched.some(x=>x.domain==='trade'))domain='trade';
   const intents=matched.filter(x=>x.domain===domain);
   return {domain,intents:intents.length?intents:[{id:domain==='nova'?'operational_overview':'trade_overview',domain,dimensions:[],metrics:[],guidance:'Answer the exact question using governed dimensions and metrics.'}]};
 }
