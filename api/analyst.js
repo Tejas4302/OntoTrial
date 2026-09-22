@@ -1,4 +1,5 @@
 import {readSession} from '../lib/auth.js';
+import {DATASET_DOMAINS,classifyQuestion,buildDatasetGuidance} from './intelligence-map.js';
 const MAX_QUESTION=500;
 const headers={'Content-Type':'application/json','Cache-Control':'no-store'};
 
@@ -62,25 +63,25 @@ export default async function handler(req,res){
   const question=String(req.body?.question||'').trim();
   if(!question||question.length>MAX_QUESTION)return send(res,400,{error:`Enter a question between 1 and ${MAX_QUESTION} characters.`});
 
+  const classification=classifyQuestion(question);
+  const domain=classification.domain;
+  const intents=classification.intents;
+  const profile=DATASET_DOMAINS[domain]||DATASET_DOMAINS.trade;
+  const semanticView=domain==='nova'
+    ? (novaSemanticView||profile.defaultSemanticView)
+    : (tradeSemanticView||profile.defaultSemanticView);
   const rowIntent=/\b(rest of world|row)\b/i.test(question);
-  const responseGuidance=[
-    "Answer the user's exact business question, not merely the shape of the returned table.",
-    "Lead with a concise executive answer, then explain the most decision-relevant drivers.",
-    "When the question asks about exposure, concentration, dependency or risk, explicitly cover the requested dimensions when data is available (for example commodity concentration, transport dependency and weather risk).",
-    "Use business-readable labels and units. Avoid database-style phrasing such as 'OVERALL has the leading metric' unless the user explicitly asks for a ranking.",
-    "Do not invent data that is absent from the semantic view or result set. Clearly state when a requested dimension is unavailable."
-  ].join(" ");
   const rowGuidance=rowIntent
-    ? " Governed interpretation: Rest of World/ROW is the aggregate origin identified by ORIGIN_ISO = 'ROW'. You MUST filter ORIGIN_ISO = 'ROW' and must not replace it with a ranking of other countries. If the question asks for commodity concentration, include a commodity breakdown rather than only a commodity count. Treat ROW as an aggregate geography; only report weather if aggregate-row coverage exists and do not infer weather from constituent countries."
+    ? "Governed ROW rule: Rest of World/ROW is ORIGIN_ISO = 'ROW'. Filter that aggregate directly. Do not substitute a ranking of other countries. Only report weather for ROW when aggregate-row weather coverage exists."
     : "";
-  const compositeTradeIntent=/\b(import|export|trade)\b/i.test(question)&&/\b(exposure|dependenc|concentrat|risk|explain)\b/i.test(question)
-    &&(/\bcommodity|product|hs4|chapter|heading\b/i.test(question)||/\btransport|sea|air|land\b/i.test(question)||/\bweather\b/i.test(question));
-  const compositeGuidance=compositeTradeIntent
-    ? " This is a multi-dimensional trade-risk question. Generate one governed analytical query that preserves the requested geography and year filters and returns a commodity breakdown (prefer COMMODITY_CHAPTER or COMMODITY_HEADING) together with IMPORT_VALUE_USD or EXPORT_VALUE_USD as appropriate, SEA_DEPENDENCY_PCT, AIR_DEPENDENCY_PCT, LAND_DEPENDENCY_PCT, WEATHER_COVERAGE_PCT, ELEVATED_WEATHER_RISK_TRADE_VALUE_USD and TRADE_WEIGHTED_WEATHER_RISK_SCORE when available. Do not collapse the answer to one scalar total. In the text answer, state the total exposure, identify the top commodity concentrations, summarize the transport mix, and explain weather coverage/risk with clear caveats."
-    : "";
-  const governedQuestion=question+"\n\nResponse requirements: "+responseGuidance+rowGuidance+compositeGuidance;
-  const novaIntent=/\b(nova|supplier|vendor|purchase order|\bpo\b|inventory|days? of cover|stock cover|shipment|material|component|plant|delayed po|operational risk)\b/i.test(question);
-  const semanticView=novaIntent?novaSemanticView:tradeSemanticView;
+  const datasetGuidance=buildDatasetGuidance(question,domain,intents);
+  const governedQuestion=[
+    question,
+    "",
+    "ONTO TRAIL GOVERNED DATASET INSTRUCTIONS",
+    datasetGuidance,
+    rowGuidance
+  ].filter(Boolean).join("\n");
 
   try{
     const analyst=await fetchWithTimeout(`${base}/api/v2/cortex/analyst/message`,{
@@ -112,7 +113,9 @@ export default async function handler(req,res){
       source:'snowflake-cortex-analyst',
       requestId:body.request_id||analyst.headers.get('x-snowflake-request-id')||'',
       semanticView,
-      semanticDomain:novaIntent?'nova-operations':'india-trade-risk',
+      semanticDomain:domain==='nova'?'nova-operations':'india-trade-risk',
+      intents:intents.map(x=>x.id),
+      datasetCoverage:{dimensions:profile.dimensions.length,metrics:profile.metrics.length},
       warehouse,
       text:parsed.text,
       sql:sql||'',
