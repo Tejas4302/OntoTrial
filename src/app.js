@@ -34,7 +34,7 @@ function sidebarCollapsed(){try{return storage.getItem('ontotrail_sidebar_collap
 function applySidebarState(collapsed=sidebarCollapsed()){const sidebar=$('#sidebar');if(!sidebar)return;sidebar.classList.toggle('collapsed',collapsed);document.body.classList.toggle('sidebar-collapsed',collapsed);const btn=sidebar.querySelector('[data-action="sidebar-collapse"]');if(btn){btn.setAttribute('aria-pressed',String(collapsed));btn.setAttribute('aria-label',collapsed?'Expand sidebar':'Collapse sidebar');btn.title=collapsed?'Expand sidebar':'Collapse sidebar';}}
 function toggleSidebar(){const collapsed=!$('#sidebar').classList.contains('collapsed');try{storage.setItem('ontotrail_sidebar_collapsed',collapsed?'1':'0');}catch{}applySidebarState(collapsed);}
 function render(){
- try {$('#view-root').innerHTML=viewMap[view]({d,result,draft,saved,activity,ui,decisions,analystWorkspace});$('#current-view').textContent=VIEWS[view];$('#nav-risk-count').textContent=result.metrics.atRisk;document.querySelectorAll('[data-nav]').forEach(n=>{const active=n.dataset.nav===view;n.classList.toggle('active',active);if(active)n.setAttribute('aria-current','page');else n.removeAttribute('aria-current');});document.title=`OntoTrail · ${VIEWS[view]}`;document.body.classList.toggle('analyst-mode',view==='analyst');$('#page-error').hidden=true;if($('#assistant-context'))$('#assistant-context').textContent=`Current: ${scenarioSummary(scenario,d)} · ${scenario.bufferDays}-day buffer`;if($('#analyst-context'))$('#analyst-context').textContent=`Current scenario: ${scenarioSummary(scenario,d)} · ${scenario.bufferDays}-day buffer`;if(view==='analyst')restoreAnalystThread();}
+ try {$('#view-root').innerHTML=viewMap[view]({d,result,draft,saved,activity,ui,decisions,analystWorkspace});$('#current-view').textContent=VIEWS[view];$('#nav-risk-count').textContent=result.metrics.atRisk;document.querySelectorAll('[data-nav]').forEach(n=>{const active=n.dataset.nav===view;n.classList.toggle('active',active);if(active)n.setAttribute('aria-current','page');else n.removeAttribute('aria-current');});document.title=`OntoTrail · ${VIEWS[view]}`;document.body.classList.toggle('analyst-mode',view==='analyst');$('#page-error').hidden=true;if($('#assistant-context'))$('#assistant-context').textContent=`Current: ${scenarioSummary(scenario,d)} · ${scenario.bufferDays}-day buffer`;if($('#analyst-context'))$('#analyst-context').textContent='Ask across suppliers, products, plants, customers, scenarios and governed KPIs';if(view==='analyst')restoreAnalystThread();}
  catch(err){console.error('View rendering failed',err);$('#view-root').replaceChildren();$('#page-error').hidden=false;$('#page-error').innerHTML='<h2>This view could not be displayed</h2><p>Your last valid scenario is retained. Return to the control tower or reload the page.</p><button class="secondary" data-action="go-overview">Control tower</button>';}
 }
 function navigate(next){if(!Object.hasOwn(VIEWS,next))return;if(view!==next&&view==='analyst')persistAnalystThread();if(view!==next&&view==='scenarios')draft=clone(scenario);view=next;$('#sidebar').classList.remove('mobile-open');$('.mobile-menu').setAttribute('aria-expanded','false');if(location.hash!==`#${view}`)history.pushState(null,'',`${location.pathname}?${encodeScenario(scenario,d)}#${view}`);render();$('#main').focus({preventScroll:true});window.scrollTo({top:0,behavior:'instant'});}
@@ -99,20 +99,6 @@ function splitCompoundQuestion(question){
  const patterns=[/[,;]?\s+(?:and\s+)?what (?:action|actions|should we do|should we take|do you recommend).*$/i,/[,;]?\s+(?:and\s+)?(?:recommend|suggest) (?:an )?(?:action|actions|next steps?).*$/i,/[,;]?\s+(?:and\s+)?how (?:can|should) we (?:reduce|mitigate|address|respond to).*$/i];
  for(const re of patterns){const m=q.match(re);if(m&&m.index>12)return {analysisQuestion:q.slice(0,m.index).trim().replace(/[?,;]+$/,'?'),wantsRecommendation:true};}
  return {analysisQuestion:q,wantsRecommendation:/\b(action|recommend|suggest|mitigat|reduce risk|next step)\b/i.test(q)};
-}
-function semanticScenarioName(){
- const delayed=Object.entries(scenario.delays||{}).filter(([,days])=>Number(days)>0);const aruna=d.suppliers[0]?.id;
- if(!delayed.length&&!scenario.recovery)return 'BASELINE';
- if(delayed.length===1&&delayed[0][0]===aruna&&Number(delayed[0][1])===4)return scenario.recovery?'ARUNA_4D_RECOVERY':'ARUNA_4D';
- return '';
-}
-function contextualizeAnalystQuestion(question){
- const q=String(question||'').trim();
- if(/\b(BASELINE|ARUNA_4D|ARUNA_4D_RECOVERY)\b/i.test(q))return q;
- const scenarioSensitive=/\b(exposure|risk|delay|late|shortage|inventory|days of inventory|fill rate|on[- ]?time|otd|recovery|landed cost|cost|order value|affected|impact|disruption|mitigation)\b/i.test(q);
- if(!scenarioSensitive)return q;
- const s=semanticScenarioName();
- return s?`${q} Use scenario ${s}.`:q;
 }
 function recommendationFor(question,result){
  const m=analystModel(result);if(!m.rows.length)return null;
@@ -181,11 +167,11 @@ async function ask(q){
  const block=document.createElement('article');block.className='chat-pair';block.innerHTML=`<p class="user-question">${e(question)}</p><div class="assistant-answer">${analystProgressMarkup()}</div>`;chat.log?.append(block);chatCount++;if(chat.input){chat.input.value='';chat.input.disabled=true;}const askButton=chat.form?.querySelector('button[type="submit"]');if(askButton)askButton.disabled=true;if(chat.log)chat.log.scrollTop=chat.log.scrollHeight;
  try{
   const answerEl=block.querySelector('.assistant-answer');
-  const governedQuestion=contextualizeAnalystQuestion(analysisQuestion);
+  const governedQuestion=analysisQuestion;
   await wait(220);setAnalystProgress(answerEl,'Mapping your question to governed business terms…',1);
   const progressTimer1=setTimeout(()=>setAnalystProgress(answerEl,'Querying Snowflake Cortex Analyst…',2),650);
   const progressTimer2=setTimeout(()=>setAnalystProgress(answerEl,'Preparing the governed answer…',3),1500);
-  const a=await askAnalyst(governedQuestion,{scenario:semanticScenarioName()});clearTimeout(progressTimer1);clearTimeout(progressTimer2);setAnalystProgress(answerEl,'Preparing the governed answer…',3);const rid=`analyst-${Date.now()}`;const hasRows=Boolean(a.result?.rows?.length);const resultHtml=hasRows?`${analystFilters(a.result,rid)}${analystChart(a.result,rid,question)}${analystTable(a.result,rid)}`:'';
+  const a=await askAnalyst(governedQuestion);clearTimeout(progressTimer1);clearTimeout(progressTimer2);setAnalystProgress(answerEl,'Preparing the governed answer…',3);const rid=`analyst-${Date.now()}`;const hasRows=Boolean(a.result?.rows?.length);const resultHtml=hasRows?`${analystFilters(a.result,rid)}${analystChart(a.result,rid,question)}${analystTable(a.result,rid)}`:'';
   const sql=a.sql?`<details class="analyst-sql"><summary>Audit trail · View generated SQL</summary><pre>${e(a.sql)}</pre></details>`:'';
   const warning=a.executionWarning?`<p class="analyst-warning">${e(a.executionWarning)}</p>`:'';
   const suggestions=a.suggestions?.length?`<div class="analyst-suggestions"><span>Explore next</span>${a.suggestions.map(s=>`<button type="button" data-question="${e(s)}">${e(s)}</button>`).join('')}</div>`:'';

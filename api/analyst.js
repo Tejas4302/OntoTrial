@@ -1,6 +1,5 @@
 import {readSession} from '../lib/auth.js';
 const MAX_QUESTION=500;
-const ALLOWED_SCENARIOS=new Set(['BASELINE','ARUNA_4D','ARUNA_4D_RECOVERY']);
 const headers={'Content-Type':'application/json','Cache-Control':'no-store'};
 
 function send(res,status,body){res.statusCode=status;for(const [k,v] of Object.entries(headers))res.setHeader(k,v);res.end(JSON.stringify(body));}
@@ -25,14 +24,6 @@ function normalizeRows(body){
   const columns=meta.map(c=>c.name);
   const rows=(body?.data||[]).slice(0,100).map(row=>Object.fromEntries(columns.map((name,i)=>[name,row[i]])));
   return {columns,rows,truncated:(body?.data||[]).length>100};
-}
-function contextualize(question,scenario){
-  const q=String(question||'').trim();
-  const s=String(scenario||'').trim().toUpperCase();
-  if(!ALLOWED_SCENARIOS.has(s))return q;
-  if(/\b(BASELINE|ARUNA_4D|ARUNA_4D_RECOVERY)\b/i.test(q))return q;
-  if(!/\b(exposure|risk|delay|late|shortage|inventory|fill rate|on[- ]?time|otd|recovery|landed cost|cost|order value|affected|impact|disruption|mitigation)\b/i.test(q))return q;
-  return `${q} Use scenario ${s}.`;
 }
 async function fetchWithTimeout(url,options={},timeoutMs=45000){
   const controller=new AbortController();
@@ -68,10 +59,9 @@ export default async function handler(req,res){
   if(!pat||!base||!semanticView||!warehouse)return send(res,500,{error:'OntoTrail AI is not fully configured.'});
 
   const question=String(req.body?.question||'').trim();
-  const scenario=String(req.body?.scenario||'').trim().toUpperCase();
   if(!question||question.length>MAX_QUESTION)return send(res,400,{error:`Enter a question between 1 and ${MAX_QUESTION} characters.`});
 
-  const governedQuestion=contextualize(question,scenario);
+  const governedQuestion=question;
 
   try{
     const analyst=await fetchWithTimeout(`${base}/api/v2/cortex/analyst/message`,{
@@ -104,7 +94,6 @@ export default async function handler(req,res){
       requestId:body.request_id||analyst.headers.get('x-snowflake-request-id')||'',
       semanticView,
       warehouse,
-      scenario:ALLOWED_SCENARIOS.has(scenario)?scenario:'',
       text:parsed.text,
       sql:sql||'',
       suggestions:parsed.suggestions,
