@@ -203,9 +203,10 @@ async function revealNarrative(container,html){
  for(let i=0;i<words.length;i++){out+=words[i];target.textContent=out;if(i%4===0)await wait(18);}
  target.innerHTML=html;target.classList.remove('streaming');
 }
-function analystWorkspaceIdentity(){const s=window.__ONTOTRAIL_SESSION||{};return String(s.email||`${s.tenant||'workspace'}:${s.role||'user'}`).toLowerCase().replace(/[^a-z0-9_-]+/g,'_');}
-function analystWorkspaceKey(){return `ontotrail_analyst_workspace_v2_${analystWorkspaceIdentity()}`;}
-function legacyAnalystWorkspaceKey(){return `ontotrail_analyst_workspace_v1_${analystWorkspaceIdentity()}`;}
+let analystStorageIdentity='';
+function analystWorkspaceIdentity(session=window.__ONTOTRAIL_SESSION||{}){return String(session.email||`${session.tenant||'workspace'}:${session.role||'user'}`).toLowerCase().replace(/[^a-z0-9_-]+/g,'_');}
+function analystWorkspaceKey(identity=analystStorageIdentity||analystWorkspaceIdentity()){return `ontotrail_analyst_workspace_v2_${identity}`;}
+function legacyAnalystWorkspaceKey(identity=analystStorageIdentity||analystWorkspaceIdentity()){return `ontotrail_analyst_workspace_v1_${identity}`;}
 const AUTO_ANALYST_PROJECTS=Object.freeze({
  overview:{key:'control-tower',name:'Control Tower'},
  operations:{key:'nova-operations',name:'Nova operations'},
@@ -288,9 +289,11 @@ function normalizeAnalystWorkspace(raw){
  return ws;
 }
 function loadAnalystWorkspace(){
+ const nextIdentity=analystWorkspaceIdentity();
+ analystStorageIdentity=nextIdentity;
  try{
-  storage.removeItem?.(legacyAnalystWorkspaceKey());
-  const raw=storage.getItem(analystWorkspaceKey());
+  storage.removeItem?.(legacyAnalystWorkspaceKey(nextIdentity));
+  const raw=storage.getItem(analystWorkspaceKey(nextIdentity));
   analystWorkspace=normalizeAnalystWorkspace(raw?JSON.parse(raw):null);
  }catch{analystWorkspace=normalizeAnalystWorkspace(null);}
 }
@@ -522,3 +525,11 @@ window.addEventListener('ontotrail-session',()=>{persistAnalystThread();loadAnal
 window.addEventListener('pagehide',persistAnalystThread);
 window.addEventListener('beforeunload',persistAnalystThread);
 document.addEventListener('visibilitychange',()=>{if(document.visibilityState==='hidden')persistAnalystThread();});
+window.addEventListener('storage',event=>{
+ if(!event.key||event.key!==analystWorkspaceKey()||!event.newValue)return;
+ try{
+  const incoming=normalizeAnalystWorkspace(JSON.parse(event.newValue));
+  analystWorkspace=incoming;
+  if(view==='analyst')render();
+ }catch{}
+});
