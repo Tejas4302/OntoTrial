@@ -116,3 +116,48 @@ for(const tc of goldenQuestions){
     assert.match(g,/Do not restate the user question, query plan, or requested fields as the final answer/i);
   });
 }
+
+
+const metricGovernanceQuestions=[
+  {
+    q:"What is India's total import value in 2026?",
+    must:['metric_governance','trade_exposure'],
+    tokens:['IMPORT_VALUE_USD','TRADE_YEAR','TRADE_DIRECTION']
+  },
+  {
+    q:"What total import exposure does India represent in 2026?",
+    must:['metric_governance','trade_exposure'],
+    tokens:['IMPORT_VALUE_USD','TRADE_DIRECTION']
+  },
+  {
+    q:"What total inbound trade value is represented by India imports in 2026?",
+    must:['metric_governance','trade_exposure'],
+    tokens:['IMPORT_VALUE_USD','TRADE_DIRECTION']
+  },
+  {
+    q:"Which India imports are more than 70% sea dependent in 2026?",
+    must:['metric_governance','transport_dependency'],
+    tokens:['SEA_DEPENDENCY_PCT','IMPORT_VALUE_USD']
+  },
+  {
+    q:"How much of India's 2026 import value has weather intelligence available?",
+    must:['metric_governance','weather_risk'],
+    tokens:['WEATHER_COVERED_TRADE_VALUE_USD','WEATHER_COVERAGE_PCT','IMPORT_VALUE_USD']
+  },
+  {
+    q:"Among countries with weather coverage, which have the highest import exposure and weather risk?",
+    must:['trade_exposure','weather_risk'],
+    tokens:['IMPORT_VALUE_USD','TRADE_WEIGHTED_WEATHER_RISK_SCORE','WEATHER_COVERAGE_PCT']
+  }
+];
+
+for(const tc of metricGovernanceQuestions){
+  test('metric governance canonical routing: '+tc.q,()=>{
+    const c=classifyQuestion(tc.q);
+    assert.equal(c.domain,'trade');
+    const ids=c.intents.map(x=>x.id);
+    for(const id of tc.must)assert.ok(ids.includes(id),`missing ${id}; got ${ids.join(', ')}`);
+    const g=buildDatasetGuidance(tc.q,c.domain,c.intents);
+    for(const token of tc.tokens)assert.match(g,new RegExp(token));
+  });
+}
