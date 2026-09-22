@@ -107,8 +107,12 @@ function semanticScenarioName(){
  return '';
 }
 function contextualizeAnalystQuestion(question){
- const q=String(question||'').trim();if(/\b(BASELINE|ARUNA_4D|ARUNA_4D_RECOVERY)\b/i.test(q))return q;
- const s=semanticScenarioName();return s?`${q} Use scenario ${s}.`:q;
+ const q=String(question||'').trim();
+ if(/\b(BASELINE|ARUNA_4D|ARUNA_4D_RECOVERY)\b/i.test(q))return q;
+ const scenarioSensitive=/\b(exposure|risk|delay|late|shortage|inventory|days of inventory|fill rate|on[- ]?time|otd|recovery|landed cost|cost|order value|affected|impact|disruption|mitigation)\b/i.test(q);
+ if(!scenarioSensitive)return q;
+ const s=semanticScenarioName();
+ return s?`${q} Use scenario ${s}.`:q;
 }
 function recommendationFor(question,result){
  const m=analystModel(result);if(!m.rows.length)return null;
