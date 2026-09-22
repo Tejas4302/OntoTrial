@@ -61,7 +61,18 @@ function analystModel(result){
 }
 function analystNarrative(question,result){
  const m=analystModel(result);if(!m.rows.length)return 'No matching records were returned for this question.';
- if(m.metric&&m.dimension){const sorted=[...m.rows].filter(r=>analystNumber(r[m.metric])!==null).sort((a,b)=>analystNumber(b[m.metric])-analystNumber(a[m.metric]));if(sorted.length){const top=sorted[0];const second=sorted[1];return `${e(top[m.dimension]??'The leading result')} has the highest ${e(analystLabel(m.metric).toLowerCase())} at <strong>${analystFormat(m.metric,top[m.metric])}</strong>${second?`, followed by ${e(second[m.dimension])} at <strong>${analystFormat(m.metric,second[m.metric])}</strong>`:''}.`;}}
+ const q=String(question||'');
+ const asksLowest=/\b(lowest|minimum|min\.?|smallest|least|bottom)\b/i.test(q);
+ const asksHighest=/\b(highest|maximum|max\.?|largest|most|top)\b/i.test(q);
+ if(m.metric&&m.dimension){
+  const rows=[...m.rows].filter(r=>analystNumber(r[m.metric])!==null);
+  const sorted=rows.sort((a,b)=>asksLowest?analystNumber(a[m.metric])-analystNumber(b[m.metric]):analystNumber(b[m.metric])-analystNumber(a[m.metric]));
+  if(sorted.length){
+   const first=sorted[0],second=sorted[1];
+   const qualifier=asksLowest?'lowest':asksHighest?'highest':'leading';
+   return `${e(first[m.dimension]??'The leading result')} has the ${qualifier} ${e(analystLabel(m.metric).toLowerCase())} at <strong>${analystFormat(m.metric,first[m.metric])}</strong>${second?`, followed by ${e(second[m.dimension])} at <strong>${analystFormat(m.metric,second[m.metric])}</strong>`:''}.`;
+  }
+ }
  if(m.metric&&m.rows.length===1)return `The result is <strong>${analystFormat(m.metric,m.rows[0][m.metric])}</strong>.`;
  return `I found <strong>${m.rows.length}</strong> matching records for your question.`;
 }
