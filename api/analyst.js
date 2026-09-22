@@ -1,4 +1,5 @@
 import {readSession} from '../lib/auth.js';
+import {DATASET_DOMAINS,classifyQuestion,buildDatasetGuidance} from './intelligence-map.js';
 const MAX_QUESTION=500;
 const headers={'Content-Type':'application/json','Cache-Control':'no-store'};
 
@@ -62,12 +63,25 @@ export default async function handler(req,res){
   const question=String(req.body?.question||'').trim();
   if(!question||question.length>MAX_QUESTION)return send(res,400,{error:`Enter a question between 1 and ${MAX_QUESTION} characters.`});
 
+  const classification=classifyQuestion(question);
+  const domain=classification.domain;
+  const intents=classification.intents;
+  const profile=DATASET_DOMAINS[domain]||DATASET_DOMAINS.trade;
+  const semanticView=domain==='nova'
+    ? (novaSemanticView||profile.defaultSemanticView)
+    : (tradeSemanticView||profile.defaultSemanticView);
   const rowIntent=/\b(rest of world|row)\b/i.test(question);
-  const governedQuestion=rowIntent
-    ? question + "\n\nGoverned interpretation: Rest of World/ROW is the aggregate origin identified by ORIGIN_ISO = 'ROW'. You MUST filter ORIGIN_ISO = 'ROW' and must not replace it with a ranking of other countries. If the question asks for commodity concentration, include a commodity breakdown rather than only a commodity count. Treat ROW as an aggregate geography; only report weather if aggregate-row coverage exists and do not infer weather from constituent countries."
-    : question;
-  const novaIntent=/\b(nova|supplier|vendor|purchase order|\bpo\b|inventory|days? of cover|stock cover|shipment|material|component|plant|delayed po|operational risk)\b/i.test(question);
-  const semanticView=novaIntent?novaSemanticView:tradeSemanticView;
+  const rowGuidance=rowIntent
+    ? "Governed ROW rule: Rest of World/ROW is ORIGIN_ISO = 'ROW'. Filter that aggregate directly. Do not substitute a ranking of other countries. Only report weather for ROW when aggregate-row weather coverage exists."
+    : "";
+  const datasetGuidance=buildDatasetGuidance(question,domain,intents);
+  const governedQuestion=[
+    question,
+    "",
+    "ONTO TRAIL GOVERNED DATASET INSTRUCTIONS",
+    datasetGuidance,
+    rowGuidance
+  ].filter(Boolean).join("\n");
 
   try{
     const analyst=await fetchWithTimeout(`${base}/api/v2/cortex/analyst/message`,{
@@ -99,7 +113,9 @@ export default async function handler(req,res){
       source:'snowflake-cortex-analyst',
       requestId:body.request_id||analyst.headers.get('x-snowflake-request-id')||'',
       semanticView,
-      semanticDomain:novaIntent?'nova-operations':'india-trade-risk',
+      semanticDomain:domain==='nova'?'nova-operations':'india-trade-risk',
+      intents:intents.map(x=>x.id),
+      datasetCoverage:{dimensions:profile.dimensions.length,metrics:profile.metrics.length},
       warehouse,
       text:parsed.text,
       sql:sql||'',
