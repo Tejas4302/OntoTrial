@@ -1,0 +1,12 @@
+definition_version: 2
+entities:
+  ontotrail:
+    type: streamlit
+    identifier: ONTOTRAIL_NATIVE
+    query_warehouse: COMPUTE_WH
+    runtime_name: SYSTEM$ST_CONTAINER_RUNTIME_PY3_11
+    main_file: streamlit_app.py
+    artifacts:
+      - streamlit_app.py
+      - pyproject.toml
+      - .streamlit/config.toml
