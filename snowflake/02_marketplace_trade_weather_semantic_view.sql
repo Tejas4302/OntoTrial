@@ -25,7 +25,7 @@ DIMENSIONS (
     trade_risk.modal_subgroup AS MODAL_SUBGROUP WITH SYNONYMS = ('goods type', 'product stage', 'trade category'),
     trade_risk.mode AS MODE WITH SYNONYMS = ('transport mode', 'shipping mode', 'mode of transport'),
     trade_risk.weather_risk_level AS WEATHER_RISK_LEVEL WITH SYNONYMS = ('weather risk', 'weather severity', 'external weather risk'),
-    IFF(trade_risk.WEATHER_DATA_AVAILABLE, 'AVAILABLE', 'NOT_AVAILABLE') AS WEATHER_COVERAGE_STATUS WITH SYNONYMS = ('weather coverage', 'weather data available', 'external signal coverage'),
+    trade_risk.weather_coverage_status AS IFF(trade_risk.WEATHER_DATA_AVAILABLE, 'AVAILABLE', 'NOT_AVAILABLE') WITH SYNONYMS = ('weather coverage', 'weather data available', 'external signal coverage'),
     trade_risk.forecast_start_date AS WEATHER_FORECAST_START_DATE WITH SYNONYMS = ('weather forecast start', 'forecast start'),
     trade_risk.forecast_end_date AS WEATHER_FORECAST_END_DATE WITH SYNONYMS = ('weather forecast end', 'forecast end')
 )
