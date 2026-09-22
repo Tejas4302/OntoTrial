@@ -127,6 +127,7 @@ export function buildDatasetGuidance(question,domain,intents=[]){
     intentText?`Intent-specific guidance: ${intentText}`:'',
     `Rules: ${d.constraints.join(' ')}`,
     'Answer contract: start with a direct executive answer. Then explain the key drivers using the returned evidence. For multi-dimensional questions, cover every requested dimension that exists in the dataset. Use exact business labels and units, quantify concentrations where possible, state data limitations explicitly, and end with a concise decision implication only when the evidence supports one. Do not invent entities, causes, forecasts, supplier facts or risks that are absent from the governed dataset.',
-    'Never answer a multi-part analytical question with only one number if other requested governed dimensions are available.'
+    'Never answer a multi-part analytical question with only one number if other requested governed dimensions are available.',
+    'Do not restate the user question, query plan, or requested fields as the final answer. If governed rows are returned, synthesize the result into a business conclusion backed by those rows.'
   ].filter(Boolean).join('\n');
 }
