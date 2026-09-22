@@ -62,12 +62,38 @@ function analystFormat(column,value){const n=analystNumber(value);if(n===null)re
 function analystLabel(column){return String(column).replaceAll('_',' ').toLowerCase().replace(/\b\w/g,c=>c.toUpperCase());}
 function analystModel(result){
  const columns=result?.columns||[],rows=result?.rows||[];const numeric=columns.filter(c=>rows.some(r=>analystNumber(r[c])!==null));const dimensions=columns.filter(c=>!numeric.includes(c));
- const metric=numeric.find(c=>/EXPOSURE|VALUE|REVENUE|COST|AMOUNT|COUNT|QUANTITY|UNITS|DAYS|RATE|PERCENT/.test(String(c).toUpperCase()))||numeric[0];
+ const metric=numeric.find(c=>/EXPOSURE|IMPORT_VALUE|EXPORT_VALUE|TRADE_VALUE|PO_VALUE|REVENUE|COST|AMOUNT/.test(String(c).toUpperCase()))||numeric.find(c=>/PCT|PERCENT|RATE|DAYS/.test(String(c).toUpperCase()))||numeric.find(c=>/COUNT|QUANTITY|UNITS/.test(String(c).toUpperCase()))||numeric[0];
  const dimension=dimensions.find(c=>!/SCENARIO/.test(String(c).toUpperCase()))||dimensions[0];return {columns,rows,numeric,dimensions,metric,dimension};
 }
 function analystNarrative(question,result,cortexText=''){
  const m=analystModel(result);if(!m.rows.length)return 'No matching records were returned for this question.';
  const q=String(question||'');const asksLowest=/\b(lowest|minimum|min\.?|smallest|least|bottom)\b/i.test(q);const asksHighest=/\b(highest|maximum|max\.?|largest|most|top)\b/i.test(q);
+ const rowAggregate=/\b(rest of world|\brow\b)\b/i.test(q)
+   && m.columns.includes('ROW_TOTAL_IMPORT_VALUE')
+   && m.columns.includes('COMMODITY_IMPORT_VALUE');
+ if(rowAggregate){
+   const rows=[...m.rows]
+     .filter(r=>analystNumber(r.COMMODITY_IMPORT_VALUE)!==null)
+     .sort((a,b)=>analystNumber(b.COMMODITY_IMPORT_VALUE)-analystNumber(a.COMMODITY_IMPORT_VALUE));
+   const first=rows[0]||{},second=rows[1]||{};
+   const total=analystFormat('ROW_TOTAL_IMPORT_VALUE',first.ROW_TOTAL_IMPORT_VALUE);
+   const sea=analystFormat('ROW_SEA_DEPENDENCY_PCT',first.ROW_SEA_DEPENDENCY_PCT);
+   const air=analystFormat('ROW_AIR_DEPENDENCY_PCT',first.ROW_AIR_DEPENDENCY_PCT);
+   const land=analystFormat('ROW_LAND_DEPENDENCY_PCT',first.ROW_LAND_DEPENDENCY_PCT);
+   const top1=first.COMMODITY_HEADING
+     ? `<strong>${e(first.COMMODITY_HEADING)}</strong> (${analystFormat('COMMODITY_IMPORT_VALUE',first.COMMODITY_IMPORT_VALUE)}, ${analystFormat('COMMODITY_SHARE_PCT',first.COMMODITY_SHARE_PCT)})`
+     : '';
+   const top2=second.COMMODITY_HEADING
+     ? `<strong>${e(second.COMMODITY_HEADING)}</strong> (${analystFormat('COMMODITY_IMPORT_VALUE',second.COMMODITY_IMPORT_VALUE)}, ${analystFormat('COMMODITY_SHARE_PCT',second.COMMODITY_SHARE_PCT)})`
+     : '';
+   const weatherCovered=analystNumber(first.TOTAL_WEATHER_COVERED_VALUE);
+   const weatherRisk=analystNumber(first.OVERALL_TRADE_WEIGHTED_WEATHER_RISK_SCORE);
+   let weather='Weather coverage is unavailable for this aggregate.';
+   if(weatherCovered!==null&&weatherCovered>0){
+     weather=`Weather-covered value is <strong>${analystFormat('TOTAL_WEATHER_COVERED_VALUE',weatherCovered)}</strong>${weatherRisk!==null?`, with a trade-weighted weather risk score of <strong>${analystFormat('OVERALL_TRADE_WEIGHTED_WEATHER_RISK_SCORE',weatherRisk)}</strong>`:''}.`;
+   }
+   return `Rest of World represents <strong>${total}</strong> of India import exposure in 2026. The largest commodity concentrations are ${top1}${top2?` followed by ${top2}`:''}. Transport mix is <strong>${sea}</strong> sea, <strong>${air}</strong> air and <strong>${land}</strong> land. ${weather}`;
+ }
  const scenarioCol=m.columns.find(c=>String(c).toUpperCase()==='SCENARIO');
  if(scenarioCol&&m.metric&&m.rows.length>=2){
   const rows=m.rows.filter(r=>analystNumber(r[m.metric])!==null);
