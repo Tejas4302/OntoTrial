@@ -13,21 +13,21 @@ TABLES (
     trade_risk AS ONTOTRAIL.SUPPLY_CHAIN.INDIA_TRADE_RISK_ENRICHED
 )
 DIMENSIONS (
-    trade_risk.trade_year AS TRADE_YEAR WITH SYNONYMS = ('year', 'forecast year', 'trade year'),
-    trade_risk.trade_direction AS TRADE_DIRECTION WITH SYNONYMS = ('direction', 'import or export', 'trade direction'),
-    trade_risk.origin_iso AS ORIGIN_ISO WITH SYNONYMS = ('origin code', 'source country code', 'exporter code'),
-    trade_risk.origin_country AS ORIGIN_COUNTRY WITH SYNONYMS = ('origin', 'source country', 'exporter', 'origin country'),
-    trade_risk.destination_iso AS DESTINATION_ISO WITH SYNONYMS = ('destination', 'destination country', 'importer code'),
-    trade_risk.hs4_str AS HS4_CODE WITH SYNONYMS = ('hs4', 'hs code', 'commodity code', 'product code'),
-    trade_risk.section AS COMMODITY_SECTION WITH SYNONYMS = ('section', 'commodity section', 'product section'),
-    trade_risk.chapter AS COMMODITY_CHAPTER WITH SYNONYMS = ('chapter', 'commodity group', 'product group', 'category'),
-    trade_risk.heading AS COMMODITY_HEADING WITH SYNONYMS = ('heading', 'commodity', 'product', 'commodity heading'),
-    trade_risk.modal_subgroup AS MODAL_SUBGROUP WITH SYNONYMS = ('goods type', 'product stage', 'trade category'),
-    trade_risk.mode AS MODE WITH SYNONYMS = ('transport mode', 'shipping mode', 'mode of transport'),
-    trade_risk.weather_risk_level AS WEATHER_RISK_LEVEL WITH SYNONYMS = ('weather risk', 'weather severity', 'external weather risk'),
+    trade_risk.TRADE_YEAR AS trade_risk.trade_year WITH SYNONYMS = ('year', 'forecast year', 'trade year'),
+    trade_risk.TRADE_DIRECTION AS trade_risk.trade_direction WITH SYNONYMS = ('direction', 'import or export', 'trade direction'),
+    trade_risk.ORIGIN_ISO AS trade_risk.origin_iso WITH SYNONYMS = ('origin code', 'source country code', 'exporter code'),
+    trade_risk.ORIGIN_COUNTRY AS trade_risk.origin_country WITH SYNONYMS = ('origin', 'source country', 'exporter', 'origin country'),
+    trade_risk.DESTINATION_ISO AS trade_risk.destination_iso WITH SYNONYMS = ('destination', 'destination country', 'importer code'),
+    trade_risk.HS4_CODE AS trade_risk.hs4_str WITH SYNONYMS = ('hs4', 'hs code', 'commodity code', 'product code'),
+    trade_risk.COMMODITY_SECTION AS trade_risk.section WITH SYNONYMS = ('section', 'commodity section', 'product section'),
+    trade_risk.COMMODITY_CHAPTER AS trade_risk.chapter WITH SYNONYMS = ('chapter', 'commodity group', 'product group', 'category'),
+    trade_risk.COMMODITY_HEADING AS trade_risk.heading WITH SYNONYMS = ('heading', 'commodity', 'product', 'commodity heading'),
+    trade_risk.MODAL_SUBGROUP AS trade_risk.modal_subgroup WITH SYNONYMS = ('goods type', 'product stage', 'trade category'),
+    trade_risk.MODE AS trade_risk.mode WITH SYNONYMS = ('transport mode', 'shipping mode', 'mode of transport'),
+    trade_risk.WEATHER_RISK_LEVEL AS trade_risk.weather_risk_level WITH SYNONYMS = ('weather risk', 'weather severity', 'external weather risk'),
     trade_risk.weather_coverage_status AS IFF(trade_risk.WEATHER_DATA_AVAILABLE, 'AVAILABLE', 'NOT_AVAILABLE') WITH SYNONYMS = ('weather coverage', 'weather data available', 'external signal coverage'),
-    trade_risk.forecast_start_date AS WEATHER_FORECAST_START_DATE WITH SYNONYMS = ('weather forecast start', 'forecast start'),
-    trade_risk.forecast_end_date AS WEATHER_FORECAST_END_DATE WITH SYNONYMS = ('weather forecast end', 'forecast end')
+    trade_risk.WEATHER_FORECAST_START_DATE AS trade_risk.forecast_start_date WITH SYNONYMS = ('weather forecast start', 'forecast start'),
+    trade_risk.WEATHER_FORECAST_END_DATE AS trade_risk.forecast_end_date WITH SYNONYMS = ('weather forecast end', 'forecast end')
 )
 METRICS (
     trade_risk.total_nominal_trade_value_usd AS SUM(trade_risk.NOMINAL_TRADE_VALUE)
