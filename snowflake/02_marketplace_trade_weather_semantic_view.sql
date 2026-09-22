@@ -92,7 +92,7 @@ METRICS (
         WITH SYNONYMS = ('commodity count', 'number of commodities', 'hs4 count')
 )
 COMMENT = 'OntoTrail governed India trade-risk semantic view combining Oxford Economics TradePrism bilateral trade intelligence with Pelmorex weather signals.'
-AI_SQL_GENERATION 'TradePrism rows represent annual bilateral trade flows and forecasts, not individual shipments or purchase orders. Use TRADE_YEAR whenever the user gives a year. For any India import question, explicitly filter TRADE_DIRECTION = IMPORT so trade value, transport dependency and weather coverage are calculated on imports only. For India export questions, explicitly filter TRADE_DIRECTION = EXPORT. Only compare weather risk for rows where WEATHER_COVERAGE_STATUS = AVAILABLE unless the user explicitly asks to include uncovered countries. Never invent weather risk for uncovered countries. WEATHER_RISK_SCORE and affected-location measures are OntoTrail-derived heuristics based on Pelmorex forecasts. Trade value metrics are USD. Prefer semantic metrics instead of re-deriving their formulas. When ranking countries, use ORIGIN_COUNTRY when available and retain ORIGIN_ISO for traceability.'
+AI_SQL_GENERATION 'TradePrism rows represent annual bilateral trade flows and forecasts, not individual shipments or purchase orders. Use TRADE_YEAR whenever the user gives a year. For any India import question, explicitly filter TRADE_DIRECTION = IMPORT so trade value, transport dependency and weather coverage are calculated on imports only. For India export questions, explicitly filter TRADE_DIRECTION = EXPORT. Interpret the business phrase Rest of World and the label ROW as the aggregate origin where ORIGIN_ISO = ROW. If the user asks about Rest of World, explicitly filter ORIGIN_ISO = ROW and do not rank or substitute other origin countries. Rest of World is an aggregate geography, not a single country. If the user asks to explain a geography including commodity concentration, include a commodity breakdown using COMMODITY_CHAPTER, COMMODITY_HEADING or HS4_CODE rather than returning only COMMODITY_COUNT. Only compare weather risk for rows where WEATHER_COVERAGE_STATUS = AVAILABLE unless the user explicitly asks to include uncovered geographies. Never invent weather risk for uncovered geographies. For aggregate geographies such as ROW, report weather only if coverage exists on the aggregate row itself; do not infer constituent-country weather. WEATHER_RISK_SCORE and affected-location measures are OntoTrail-derived heuristics based on Pelmorex forecasts. Trade value metrics are USD. Prefer semantic metrics instead of re-deriving their formulas. When ranking countries, use ORIGIN_COUNTRY when available and retain ORIGIN_ISO for traceability.'
 AI_QUESTION_CATEGORIZATION 'This semantic view answers questions about India bilateral trade flows, import and export exposure, commodities, HS4 categories, transport-mode dependency, annual forecasts, weather-data coverage and weather-linked trade risk. If a question asks about individual suppliers, purchase orders, exact shipments, plants, delivery dates or supplier-specific operational events, explain that those entities are outside this Marketplace trade-flow dataset rather than fabricating them.';
 
 CREATE ROLE IF NOT EXISTS ONTOTRAIL_APP_ROLE;
@@ -115,4 +115,23 @@ FROM SEMANTIC_VIEW(
                trade_risk.trade_direction
     WHERE trade_risk.trade_year = 2026
       AND trade_risk.trade_direction = 'IMPORT'
+);
+
+
+-- Validation: Rest of World must resolve to the ROW aggregate, not a country ranking.
+SELECT *
+FROM SEMANTIC_VIEW(
+    ONTOTRAIL.SUPPLY_CHAIN.ONTOTRAIL_TRADE_RISK_ANALYST
+    METRICS trade_risk.import_value_usd,
+            trade_risk.sea_dependency_pct,
+            trade_risk.air_dependency_pct,
+            trade_risk.land_dependency_pct,
+            trade_risk.weather_coverage_pct
+    DIMENSIONS trade_risk.origin_country,
+               trade_risk.origin_iso,
+               trade_risk.trade_year,
+               trade_risk.trade_direction
+    WHERE trade_risk.trade_year = 2026
+      AND trade_risk.trade_direction = 'IMPORT'
+      AND trade_risk.origin_iso = 'ROW'
 );
