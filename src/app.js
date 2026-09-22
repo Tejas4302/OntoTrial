@@ -296,9 +296,19 @@ function loadAnalystWorkspace(){
 }
 function saveAnalystWorkspace(){try{storage.setItem(analystWorkspaceKey(),JSON.stringify(analystWorkspace));}catch{}}
 function activeAnalystThread(){return analystWorkspace.threads.find(t=>t.id===analystWorkspace.activeThreadId)||analystWorkspace.threads[0];}
+function persistAnalystThreadFromLog(thread,log){
+ if(!log||!thread)return;
+ try{
+  const pairs=[...log.querySelectorAll('.chat-pair')];
+  while(pairs.length>30){pairs.shift()?.remove();}
+  thread.html=log.innerHTML;
+  thread.updatedAt=new Date().toISOString();
+  saveAnalystWorkspace();
+ }catch{}
+}
 function persistAnalystThread(){
- const log=$('#analyst-chat-log'),thread=activeAnalystThread();if(!log||!thread)return;
- try{const pairs=[...log.querySelectorAll('.chat-pair')];while(pairs.length>30){pairs.shift()?.remove();}thread.html=log.innerHTML;thread.updatedAt=new Date().toISOString();saveAnalystWorkspace();}catch{}
+ const log=$('#analyst-chat-log'),thread=activeAnalystThread();
+ persistAnalystThreadFromLog(thread,log);
 }
 function restoreAnalystThread(){
  if(view!=='analyst')return;const log=$('#analyst-chat-log'),thread=activeAnalystThread();if(!log||!thread)return;
@@ -391,9 +401,9 @@ function retryChat(pair){
  const question=chatPairQuestion(pair);if(!question)return;truncateConversationFrom(pair);void ask(question);
 }
 async function ask(q){
- const question=q.trim();if(!question)return;if(view!=='analyst')navigate('analyst');const chat=analystUI();if(!chatCount){chat.log?.replaceChildren();const thread=activeAnalystThread();if(thread&&thread.title==='New chat'){thread.title=question.length>52?`${question.slice(0,49)}…`:question;saveAnalystWorkspace();}}
+ const question=q.trim();if(!question)return;if(view!=='analyst')navigate('analyst');const chat=analystUI();const requestThread=activeAnalystThread();if(!chatCount){chat.log?.replaceChildren();if(requestThread&&requestThread.title==='New chat'){requestThread.title=question.length>52?`${question.slice(0,49)}…`:question;saveAnalystWorkspace();}}
  const {analysisQuestion,wantsRecommendation}=splitCompoundQuestion(question);
- const block=document.createElement('article');block.className='chat-pair';block.innerHTML=`<div class="user-question-wrap">${userQuestionInner(question)}</div><div class="assistant-answer">${analystProgressMarkup()}</div>`;chat.log?.append(block);chatCount++;if(chat.input){chat.input.value='';chat.input.disabled=true;}const askButton=chat.form?.querySelector('button[type="submit"]');if(askButton)askButton.disabled=true;if(chat.log)chat.log.scrollTop=chat.log.scrollHeight;
+ const block=document.createElement('article');block.className='chat-pair';block.innerHTML=`<div class="user-question-wrap">${userQuestionInner(question)}</div><div class="assistant-answer">${analystProgressMarkup()}</div>`;chat.log?.append(block);chatCount++;persistAnalystThreadFromLog(requestThread,chat.log);if(chat.input){chat.input.value='';chat.input.disabled=true;}const askButton=chat.form?.querySelector('button[type="submit"]');if(askButton)askButton.disabled=true;if(chat.log)chat.log.scrollTop=chat.log.scrollHeight;
  try{
   const answerEl=block.querySelector('.assistant-answer');
   const governedQuestion=analysisQuestion;
@@ -414,7 +424,7 @@ async function ask(q){
   const reveal=answerEl.querySelector('.analyst-reveal');if(reveal){reveal.hidden=false;requestAnimationFrame(()=>reveal.classList.add('visible'));}
  }catch(err){
   const local=answer(question,d,result);block.querySelector('.assistant-answer').innerHTML=`<div class="answer-heading">${icon('chat')}<strong>Local fallback · ${e(local.title)}</strong></div><p class="direct-answer">${e(local.text)}</p>${evidenceButtons(local.ids)}<small>Cortex Analyst unavailable: ${e(err.message||'connection error')}</small><div class="assistant-response-actions"><button class="chat-action" type="button" data-chat-copy aria-label="Copy response" title="Copy response">Copy</button><button class="chat-action" type="button" data-chat-retry aria-label="Try again" title="Try again">Try again</button></div>`;
- }finally{const current=analystUI();if(current.input){current.input.disabled=false;current.input.focus();}const btn=current.form?.querySelector('button[type="submit"]');if(btn)btn.disabled=false;if(current.log)current.log.scrollTop=current.log.scrollHeight;persistAnalystThread();}
+ }finally{persistAnalystThreadFromLog(requestThread,chat.log);const current=analystUI();if(current.input){current.input.disabled=false;current.input.focus();}const btn=current.form?.querySelector('button[type="submit"]');if(btn)btn.disabled=false;if(current.log)current.log.scrollTop=current.log.scrollHeight;}
 }
 function decisionDialog(seed={}){
  const today=new Date().toISOString().slice(0,10);const due=seed.due||today;
@@ -432,7 +442,7 @@ function showClear(){openDetail(`<div class="dialog-head"><h2 id="detail-title">
 const actions={
  'go-scenarios':()=>navigate('scenarios'),'go-orders':()=>navigate('orders'),'go-operations':()=>navigate('operations'),'go-decisions':()=>navigate('decisions'),'go-governance':()=>navigate('governance'),'new-decision':()=>decisionDialog(),'go-about':()=>navigate('about'),'go-profile':()=>navigate('profile'),'go-overview':()=>navigate('overview'),'go-analyst':()=>openAnalystForView(view),'refresh-trade':()=>refreshTradeData(),
  'menu':()=>{const open=$('#sidebar').classList.toggle('mobile-open');$('.mobile-menu').setAttribute('aria-expanded',String(open));},'sidebar-collapse':toggleSidebar,
- 'assistant':showAssistant,'new-chat':()=>newAnalystChat(),'new-project':projectDialog,'clear-chat-history':clearAnalystHistory,'share':share,'save':saveDialog,'export':()=>exportScenario(),
+ 'assistant':showAssistant,'new-chat':()=>newAnalystChat(activeAnalystThread()?.projectId||''),'new-project':projectDialog,'clear-chat-history':clearAnalystHistory,'share':share,'save':saveDialog,'export':()=>exportScenario(),
  'export-csv':()=>{downloadFile('ontotrail-orders.csv',orderCSV(result),'text/csv;charset=utf-8');toast('All orders exported for the active scenario.');},
  'draft-baseline':()=>{draft=baseline(d);render();toast('Preview reset to zero delays. Apply to update the workspace.');},
  'draft-reset':()=>{draft=clone(scenario);render();toast('Unapplied changes discarded.');},
@@ -508,4 +518,7 @@ async function refreshTradeData(){tradeData={...tradeData,loading:true,error:''}
 try{validateDataset(d);result=evaluate(d,scenario);loadAnalystWorkspace();shell();applySidebarState();render();void refreshTradeData();initWelcome();if(initial.warning||persisted.warning)toast(initial.warning||persisted.warning);}
 catch(err){$('#shell').innerHTML=`<main class="fatal"><h1>OntoTrail could not load its dataset</h1><p>Calculations are unavailable until the source records are corrected.</p><p>${e(err.message)}</p><ul>${(err.issues||[]).map(s=>`<li>${e(s)}</li>`).join('')}</ul></main>`;console.error(err);}
 
-window.addEventListener('ontotrail-session',()=>{loadAnalystWorkspace();if(view==='analyst')render();});
+window.addEventListener('ontotrail-session',()=>{persistAnalystThread();loadAnalystWorkspace();if(view==='analyst')render();});
+window.addEventListener('pagehide',persistAnalystThread);
+window.addEventListener('beforeunload',persistAnalystThread);
+document.addEventListener('visibilitychange',()=>{if(document.visibilityState==='hidden')persistAnalystThread();});
