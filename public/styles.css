@@ -439,3 +439,18 @@ td .text-button{white-space:nowrap}
     padding-right:16px;
   }
 }
+
+
+/* v2.11.0 — Analyst chat/project lifecycle + contextual auto-projects */
+.analyst-thread-row{display:grid;grid-template-columns:minmax(0,1fr) auto;align-items:center;gap:3px;border-radius:7px;margin-bottom:2px}
+.analyst-thread-row:hover,.analyst-thread-row.active{background:#f2f7f8}
+.analyst-thread-row.active{background:#e9f6f1}
+.analyst-thread-row .analyst-thread{margin:0;background:transparent}
+.analyst-thread-row.active .analyst-thread{background:transparent;color:#0b6b5d}
+.analyst-item-actions{display:flex;align-items:center;gap:1px;opacity:0;transition:opacity .15s ease;padding-right:4px}
+.analyst-thread-row:hover .analyst-item-actions,.analyst-thread-row.active .analyst-item-actions{opacity:1}
+.analyst-item-actions button,.analyst-project-actions button{width:23px;height:23px;border:0;border-radius:6px;background:transparent;color:#78909d;display:grid;place-items:center;padding:0;font-size:13px}
+.analyst-item-actions button:hover,.analyst-project-actions button:hover{background:#e4eef1;color:#15384a}
+.analyst-item-actions button[data-chat-delete]:hover,.analyst-project-actions button[data-project-delete]:hover{background:#fff0f0;color:#a63232}
+.analyst-project-actions{display:flex;align-items:center;gap:1px;flex:0 0 auto}
+.analyst-project-head>span{flex:1;min-width:0}
