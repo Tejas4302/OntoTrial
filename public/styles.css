@@ -86,3 +86,74 @@
 .analyst-workspace .analyst-page{margin-bottom:0}.analyst-suggestion-strip{display:flex;gap:8px;flex-wrap:wrap;padding:12px 24px;border-bottom:1px solid var(--border);background:#fbfcfd}
 .thread-project-picker{display:grid;gap:3px;font-size:9px;text-transform:uppercase;letter-spacing:.06em;color:#758894}.thread-project-picker select{min-width:150px}
 @media(max-width:980px){.analyst-workspace{grid-template-columns:1fr}.analyst-library{position:static;max-height:none}.analyst-library-scroll{max-height:230px}.analyst-page-log{max-height:none}}
+
+
+/* v1.7.0 — collapsible navigation + focused AI chat workspace */
+.sidebar-brand-row{display:flex;align-items:center;gap:6px;margin-bottom:22px}
+.sidebar-brand-row .brand{flex:1;min-width:0;margin:0;padding:6px 5px}
+.brand-mark-shell{display:grid;place-items:center;width:46px;height:46px;flex:0 0 46px;border-radius:12px;background:#fff;box-shadow:0 1px 0 rgba(255,255,255,.35),0 5px 18px rgba(2,18,34,.18)}
+.brand-mark-shell .brand-logo-mark{width:34px!important;height:34px!important;flex:0 0 34px!important}
+.sidebar-collapse-button{width:30px;height:30px;flex:0 0 30px;border:1px solid rgba(255,255,255,.14);border-radius:8px;background:rgba(255,255,255,.05);color:#b8cbd7;font-size:22px;line-height:1;display:grid;place-items:center;padding:0;transition:transform .18s ease,background .18s ease}
+.sidebar-collapse-button:hover{background:rgba(255,255,255,.11);color:#fff}
+.sidebar,.main-wrap{transition:width .18s ease,margin-left .18s ease}
+body.sidebar-collapsed .sidebar{width:78px;padding-left:12px;padding-right:12px}
+body.sidebar-collapsed .main-wrap{margin-left:78px}
+body.sidebar-collapsed .sidebar-brand-row{gap:0;justify-content:center}
+body.sidebar-collapsed .sidebar-brand-row .brand{flex:0 0 auto;padding:4px}
+body.sidebar-collapsed .brand-wordmark,
+body.sidebar-collapsed .workspace-label,
+body.sidebar-collapsed .nav-item>span:not(.nav-count),
+body.sidebar-collapsed .nav-count,
+body.sidebar-collapsed .sidebar-profile>div:nth-child(2),
+body.sidebar-collapsed .sidebar-profile-arrow,
+body.sidebar-collapsed .sidebar-version span{display:none!important}
+body.sidebar-collapsed .sidebar nav{display:flex;flex-direction:column;align-items:center}
+body.sidebar-collapsed .nav-item{width:48px;height:48px;padding:0;justify-content:center;margin:4px auto}
+body.sidebar-collapsed .nav-item .icon{width:20px;height:20px}
+body.sidebar-collapsed .sidebar-bottom{width:48px;height:48px;margin-left:auto;margin-right:auto;padding:0;justify-content:center;border-top:0}
+body.sidebar-collapsed .workspace-avatar{margin:0}
+body.sidebar-collapsed .sidebar-version{justify-content:center;padding:0;font-size:8px}
+body.sidebar-collapsed .sidebar-collapse-button{position:absolute;left:62px;top:32px;z-index:3;background:#fff;color:#345064;border-color:#d7e2e8;box-shadow:0 2px 8px rgba(10,34,62,.12);transform:rotate(180deg)}
+body.sidebar-collapsed .brand-mark-shell{width:46px;height:46px}
+
+/* AI Analyst behaves like a dedicated chat application: outer page is fixed, only messages scroll. */
+body.analyst-mode{overflow:hidden}
+body.analyst-mode .main-wrap{height:100vh;min-height:0;overflow:hidden}
+body.analyst-mode .notice-bar,body.analyst-mode .footer{display:none}
+body.analyst-mode #main{flex:1;min-height:0;max-width:none;margin:0;padding:0 24px 18px;overflow:hidden}
+body.analyst-mode #view-root{height:100%;min-height:0;display:flex;flex-direction:column}
+body.analyst-mode .page-heading{display:none}
+body.analyst-mode .analyst-workspace{height:100%;min-height:0;grid-template-columns:250px minmax(0,1fr);gap:16px;padding-top:16px}
+body.analyst-mode .analyst-library{position:static;top:auto;height:100%;max-height:none;display:flex;flex-direction:column}
+body.analyst-mode .analyst-library-scroll{flex:1;min-height:0;max-height:none;overflow-y:auto}
+body.analyst-mode .analyst-page{height:100%;min-height:0;margin:0;display:flex;flex-direction:column;border-radius:14px}
+body.analyst-mode .analyst-page-head{flex:0 0 auto;padding:16px 22px}
+body.analyst-mode .analyst-page-head h2{font-size:18px;margin:7px 0 3px}
+body.analyst-mode .analyst-suggestion-strip{flex:0 0 auto;padding:9px 22px}
+body.analyst-mode .analyst-page-log{flex:1;min-height:0;max-height:none;overflow-y:auto;overscroll-behavior:contain;padding:22px 24px 34px;scrollbar-gutter:stable}
+body.analyst-mode .analyst-page .chat-pair{width:min(880px,100%);margin:0 auto 26px}
+body.analyst-mode .user-question{width:fit-content;max-width:min(720px,85%);margin:0 0 14px auto;border-radius:18px 18px 4px 18px;padding:12px 16px}
+body.analyst-mode .assistant-answer{background:transparent;border:0;padding:4px 0 8px}
+body.analyst-mode .analyst-page-form{flex:0 0 auto;position:relative;bottom:auto;width:min(900px,calc(100% - 36px));margin:0 auto 8px;padding:10px 12px;background:#fff;border:1px solid #cfdde3;border-radius:16px;box-shadow:0 8px 28px rgba(16,42,67,.10)}
+body.analyst-mode .analyst-page-form input{border:0!important;outline:0!important;padding:10px 8px;font-size:14px;background:transparent}
+body.analyst-mode .analyst-page-form input:focus-visible{outline:0!important}
+body.analyst-mode .analyst-page-form .primary{border-radius:11px}
+body.analyst-mode .analyst-page-foot{flex:0 0 auto;width:min(900px,calc(100% - 36px));margin:0 auto;padding:0 4px 10px;background:transparent}
+body.analyst-mode .analyst-page-welcome{width:min(760px,100%);margin:48px auto 20px;border:0;background:transparent;text-align:center;padding:18px}
+body.analyst-mode .analyst-page-welcome>p{margin-left:auto;margin-right:auto}
+body.analyst-mode .analyst-starter-grid{text-align:left}
+@media(max-width:980px){
+  body.analyst-mode{overflow:auto}
+  body.analyst-mode .main-wrap{height:auto;min-height:100vh;overflow:visible}
+  body.analyst-mode #main{overflow:visible;padding:16px}
+  body.analyst-mode #view-root{height:auto}
+  body.analyst-mode .analyst-workspace{height:auto;grid-template-columns:1fr}
+  body.analyst-mode .analyst-library{height:auto;max-height:240px}
+  body.analyst-mode .analyst-page{height:auto;min-height:70vh}
+  body.analyst-mode .analyst-page-log{min-height:420px;max-height:58vh}
+}
+@media(max-width:760px){
+  .sidebar-collapse-button{display:none}
+  body.sidebar-collapsed .sidebar{width:236px}
+  body.sidebar-collapsed .main-wrap{margin-left:0}
+}
