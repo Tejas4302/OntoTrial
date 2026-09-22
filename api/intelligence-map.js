@@ -82,7 +82,7 @@ const INTENTS = [
   {id:'nova_weather_risk', domain:'nova', re:/\b(weather|storm|flood|external weather|weather-linked)\b/i,
     dimensions:['SUPPLIER_NAME','ORIGIN_COUNTRY','WEATHER_RISK_LEVEL','MATERIAL_NAME'], metrics:['WEATHER_LINKED_PO_VALUE_USD','TOTAL_PO_VALUE_USD','MINIMUM_DAYS_OF_COVER'],
     guidance:'For Nova questions, treat weather as external Marketplace context. Quantify weather-linked PO exposure and combine it with supplier/material and inventory evidence; do not infer weather risk where the enrichment is unavailable.'},
-  {id:'purchase_orders', domain:'nova', re:/\b(purchase orders?|pos?|ordered|received|outstanding|delayed pos?)\b/i,
+  {id:'purchase_orders', domain:'nova', re:/\b(purchase[- ]orders?|pos?|ordered|received|outstanding|delayed[- ]pos?)\b/i,
     dimensions:['PO_ID','PO_STATUS','PROMISED_DATE','SUPPLIER_NAME','MATERIAL_NAME'], metrics:['PURCHASE_ORDER_COUNT','TOTAL_PO_VALUE_USD','DELAYED_PO_COUNT','DELAYED_PO_VALUE_USD','TOTAL_ORDER_QUANTITY','TOTAL_RECEIVED_QUANTITY','OUTSTANDING_QUANTITY'],
     guidance:'Explain PO status, outstanding quantity/value and due-date risk when relevant.'},
   {id:'inventory_health', domain:'nova', re:/\b(inventory|stock|days? of cover|doi|cover|safety stock)\b/i,
@@ -105,7 +105,7 @@ const INTENTS = [
 export function classifyQuestion(question=''){
   const q=String(question||'').trim();
   const matched=INTENTS.filter(x=>x.re.test(q));
-  const opsSignal=/\b(nova|suppliers?|vendors?|purchase orders?|pos?|inventory|stock|shipments?|materials?|components?|plants?|factor(?:y|ies)|days? of cover|operational risk)\b/i.test(q);
+  const opsSignal=/\b(nova|suppliers?|vendors?|purchase[- ]orders?|pos?|inventory|stock|shipments?|materials?|components?|plants?|factor(?:y|ies)|days? of cover|operational risk)\b/i.test(q);
   const tradeSignal=/\b(india|import|export|trade|country|china|origin|commodity|hs4|sea dependency|air dependency|weather coverage)\b/i.test(q);
   let domain='trade';
   if(opsSignal)domain='nova';
