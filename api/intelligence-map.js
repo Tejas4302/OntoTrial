@@ -64,6 +64,9 @@ export const DATASET_DOMAINS = Object.freeze({
 });
 
 const INTENTS = [
+  {id:'metric_governance', domain:'trade', re:/\b(total import value|total import exposure|total inbound trade value|weather intelligence available|more than\s+70%\s+sea dependent|weather[- ]covered trade value)\b/i,
+    dimensions:['TRADE_YEAR','TRADE_DIRECTION','ORIGIN_COUNTRY','WEATHER_COVERAGE_STATUS'], metrics:['IMPORT_VALUE_USD','SEA_DEPENDENCY_PCT','WEATHER_COVERED_TRADE_VALUE_USD','WEATHER_COVERAGE_PCT','TRADE_WEIGHTED_WEATHER_RISK_SCORE'],
+    guidance:'This is a Metric Governance question. Resolve persona-specific wording to the canonical semantic metric, state the metric name and filters, then give the business answer. Planning, Procurement and Logistics variants of total India imports must resolve to IMPORT_VALUE_USD for TRADE_YEAR 2026 and TRADE_DIRECTION = IMPORT.'},
   {id:'trade_exposure', domain:'trade', re:/\b(import|export|trade)\b.*\b(exposure|value|dependency|dependence)\b|\bexposure\b.*\b(country|china|india|origin|import|export)\b/i,
     dimensions:['ORIGIN_COUNTRY','ORIGIN_ISO','TRADE_YEAR','TRADE_DIRECTION'], metrics:['IMPORT_VALUE_USD','EXPORT_VALUE_USD','TOTAL_NOMINAL_TRADE_VALUE_USD'],
     guidance:'Lead with total exposure, then explain the main drivers rather than returning only one scalar.'},
