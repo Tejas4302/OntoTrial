@@ -137,6 +137,41 @@ function analystNarrative(question,result,cortexText=''){
      }
    }
  }
+ const exposureIntent=/\b(import|export|trade)\b/i.test(q)&&/\b(exposure|dependenc|concentrat|risk|explain)\b/i.test(q);
+ if(exposureIntent){
+  const cols=m.columns.map(c=>String(c));const find=(patterns,exclude=[])=>cols.find(c=>{const u=c.toUpperCase();return patterns.some(p=>p.test(u))&&!exclude.some(p=>p.test(u));});
+  const commodityCol=find([/COMMODITY_CHAPTER/,/COMMODITY_HEADING/,/^CHAPTER$/, /^HEADING$/, /COMMODITY/],[/COUNT/,/VALUE/,/PCT/,/PERCENT/]);
+  const valueCol=find([/IMPORT_VALUE_USD/,/EXPORT_VALUE_USD/,/TOTAL_NOMINAL_TRADE_VALUE_USD/,/TRADE_VALUE/]);
+  if(commodityCol&&valueCol&&m.rows.length){
+   const seaCol=find([/SEA_DEPENDENCY_PCT/]),airCol=find([/AIR_DEPENDENCY_PCT/]),landCol=find([/LAND_DEPENDENCY_PCT/]);
+   const weatherCoverageCol=find([/WEATHER_COVERAGE_PCT/]),weatherRiskCol=find([/TRADE_WEIGHTED_WEATHER_RISK_SCORE/]),weatherValueCol=find([/ELEVATED_WEATHER_RISK_TRADE_VALUE_USD/]);
+   const rows=m.rows.map(r=>({r,label:String(r[commodityCol]??'').trim(),value:analystNumber(r[valueCol])})).filter(x=>x.label&&x.value!==null).sort((a,b)=>b.value-a.value);
+   if(rows.length){
+    const total=rows.reduce((n,x)=>n+x.value,0);
+    const weighted=(col,coverageWeighted=false)=>{
+      if(!col||!total)return null;let num=0,den=0;
+      for(const x of rows){const v=analystNumber(x.r[col]);if(v===null)continue;const coverage=weatherCoverageCol?analystNumber(x.r[weatherCoverageCol]):null;const w=coverageWeighted&&coverage!==null?x.value*(coverage/100):x.value;if(w<=0)continue;num+=v*w;den+=w;}
+      return den?num/den:null;
+    };
+    const top=rows.slice(0,3).map(x=>{const share=total?x.value/total*100:0;return `<strong>${e(x.label)}</strong> ${analystFormat(valueCol,x.value)} (${new Intl.NumberFormat('en-IN',{maximumFractionDigits:1}).format(share)}%)`;}).join(', ');
+    const parts=[`Total modeled ${/export/i.test(q)?'export':'import'} exposure is <strong>${analystFormat(valueCol,total)}</strong>.`,`Top commodity concentrations: ${top}.`];
+    const sea=weighted(seaCol),air=weighted(airCol),land=weighted(landCol);const transport=[];
+    if(sea!==null)transport.push(`<strong>${new Intl.NumberFormat('en-IN',{maximumFractionDigits:1}).format(sea)}%</strong> sea`);
+    if(air!==null)transport.push(`<strong>${new Intl.NumberFormat('en-IN',{maximumFractionDigits:1}).format(air)}%</strong> air`);
+    if(land!==null)transport.push(`<strong>${new Intl.NumberFormat('en-IN',{maximumFractionDigits:1}).format(land)}%</strong> land`);
+    if(transport.length)parts.push(`Estimated transport mix across the returned commodity exposure: ${transport.join(', ')}.`);
+    const coverage=weighted(weatherCoverageCol),risk=weighted(weatherRiskCol,true);const weatherValue=weatherValueCol?rows.reduce((n,x)=>n+(analystNumber(x.r[weatherValueCol])||0),0):null;
+    if(coverage!==null&&coverage>0){
+      let weather=`Weather intelligence covers about <strong>${new Intl.NumberFormat('en-IN',{maximumFractionDigits:1}).format(coverage)}%</strong> of the returned exposure`;
+      if(weatherValue!==null&&weatherValue>0)weather+=`, with <strong>${analystFormat(weatherValueCol,weatherValue)}</strong> linked to elevated weather risk`;
+      if(risk!==null)weather+=` and a trade-weighted weather risk score of <strong>${new Intl.NumberFormat('en-IN',{maximumFractionDigits:2}).format(risk)}</strong>`;
+      parts.push(weather+'.');
+    }else if(weatherCoverageCol)parts.push('Weather coverage is unavailable or zero for the returned exposure, so no weather risk is inferred.');
+    parts.push('Decision focus: review the most concentrated commodity categories first, especially where transport dependence and external risk overlap.');
+    return parts.join(' ');
+   }
+  }
+ }
  const cleanedCortex=String(cortexText||'').replace(/this is our interpretation of your question[:\s-]*/ig,'').trim();
  const scenarioCol=m.columns.find(c=>String(c).toUpperCase()==='SCENARIO');
  if(scenarioCol&&m.metric&&m.rows.length>=2){
@@ -178,6 +213,13 @@ function recommendationFor(question,result){
  const m=analystModel(result);if(!m.rows.length)return null;
  const dim=String(m.dimension||'').toUpperCase();const metric=m.metric;const sorted=metric?[...m.rows].filter(r=>analystNumber(r[metric])!==null).sort((a,b)=>analystNumber(b[metric])-analystNumber(a[metric])):m.rows;const top=sorted[0]||{};const name=String(top[m.dimension]||'the highest-risk item');const value=metric?analystFormat(metric,top[metric]):'';
  let title=`Review and mitigate ${name} exposure`,action=`Review the highest-impact records for ${name}, assign an owner and validate the mitigation in the recovery scenario before execution.`,owner='Supply Planning';
+ const geoMatch=String(question||'').match(/\b(?:to|from|with)\s+([A-Z][A-Za-z .'-]{2,40})\b/);
+ if(/\b(import|export|trade)\b/i.test(question)&&/\b(exposure|dependenc|concentrat|risk)\b/i.test(question)){
+  const geography=geoMatch?.[1]?.replace(/\s+in\s+\d{4}.*$/i,'').trim()||name;
+  title=`Review ${geography} trade concentration and dependency`;
+  action=`Prioritize the largest commodity exposures linked to ${geography}, validate sea/air/land dependency, and review alternate sourcing or routing options where concentration and weather risk overlap.`;
+  owner='Trade Risk Lead';
+ }
  if(/SUPPLIER|VENDOR/.test(dim)){title=`Qualify alternate source for ${name}`;action=`Qualify an alternate source for the exposed components supplied by ${name}, prioritize the highest-value affected orders and simulate a partial demand shift before approval.`;owner='Procurement Lead';}
  else if(/PLANT|FACTORY|LOCATION/.test(dim)){title=`Rebalance exposure at ${name}`;action=`Review alternate production capacity and inbound supply options for ${name}, then model the lowest-risk production reallocation in the recovery scenario.`;owner='Operations Lead';}
  else if(/PRODUCT|PART|COMPONENT/.test(dim)){title=`Mitigate ${name} component risk`;action=`Prioritize replenishment and alternate sourcing for ${name}, protect the highest-value customer orders and validate recovery capacity.`;owner='Supply Planning';}
