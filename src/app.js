@@ -137,6 +137,7 @@ function analystNarrative(question,result,cortexText=''){
      }
    }
  }
+ const cleanedCortex=String(cortexText||'').replace(/this is our interpretation of your question[:\s-]*/ig,'').trim();
  const scenarioCol=m.columns.find(c=>String(c).toUpperCase()==='SCENARIO');
  if(scenarioCol&&m.metric&&m.rows.length>=2){
   const rows=m.rows.filter(r=>analystNumber(r[m.metric])!==null);
@@ -148,6 +149,9 @@ function analystNarrative(question,result,cortexText=''){
    if(disruption&&recovery){const a=analystNumber(disruption[m.metric]),b=analystNumber(recovery[m.metric]);if(a!==null&&b!==null&&a!==0){const change=a-b;const pct=change/a*100;delta=` Recovery reduces ${e(analystLabel(m.metric).toLowerCase())} by <strong>${analystFormat(m.metric,change)}</strong> (${new Intl.NumberFormat('en-IN',{maximumFractionDigits:1}).format(pct)}%).`;}}
    return `${parts.join(' · ')}.${delta}`;
   }
+ }
+ if(cleanedCortex.length>=40){
+  return e(cleanedCortex).replace(/\n/g,'<br>');
  }
  if(m.metric&&m.dimension){
   const rows=[...m.rows].filter(r=>analystNumber(r[m.metric])!==null);
@@ -161,8 +165,7 @@ function analystNarrative(question,result,cortexText=''){
   }
  }
  if(m.metric&&m.rows.length===1)return `The result is <strong>${analystFormat(m.metric,m.rows[0][m.metric])}</strong>.`;
- const cleaned=String(cortexText||'').replace(/this is our interpretation of your question[:\s-]*/ig,'').trim();
- if(cleaned)return e(cleaned);
+ if(cleanedCortex)return e(cleanedCortex);
  return `I found <strong>${m.rows.length}</strong> matching records for your question.`;
 }
 function splitCompoundQuestion(question){
@@ -297,14 +300,42 @@ function loadAnalystWorkspace(){
   analystWorkspace=normalizeAnalystWorkspace(raw?JSON.parse(raw):null);
  }catch{analystWorkspace=normalizeAnalystWorkspace(null);}
 }
-function saveAnalystWorkspace(){try{storage.setItem(analystWorkspaceKey(),JSON.stringify(analystWorkspace));}catch{}}
+function saveAnalystWorkspace(){
+ try{storage.setItem(analystWorkspaceKey(),JSON.stringify(analystWorkspace));return true;}
+ catch{
+  try{
+   const activeId=analystWorkspace.activeThreadId;
+   const threads=[...analystWorkspace.threads].sort((a,b)=>new Date(b.updatedAt||b.createdAt||0)-new Date(a.updatedAt||a.createdAt||0)).slice(0,24);
+   const reduced={...analystWorkspace,threads:threads.map(t=>t.id===activeId?t:{...t,html:''})};
+   storage.setItem(analystWorkspaceKey(),JSON.stringify(reduced));analystWorkspace=reduced;return true;
+  }catch{return false;}
+ }
+}
 function activeAnalystThread(){return analystWorkspace.threads.find(t=>t.id===analystWorkspace.activeThreadId)||analystWorkspace.threads[0];}
+function compactAnalystLogHtml(log){
+ const copy=log.cloneNode(true);
+ const pairs=[...copy.querySelectorAll('.chat-pair')];
+ while(pairs.length>16)pairs.shift()?.remove();
+ copy.querySelectorAll('.analyst-table tbody').forEach(body=>[...body.rows].slice(12).forEach(row=>row.remove()));
+ copy.querySelectorAll('.analyst-progress').forEach(node=>node.remove());
+ copy.querySelectorAll('.analyst-reveal').forEach(node=>{node.hidden=false;});
+ return copy.innerHTML;
+}
+function encodeDecisionSeed(seed){try{return encodeURIComponent(JSON.stringify(seed||{}));}catch{return '';}}
+function decodeDecisionSeed(value){try{const seed=JSON.parse(decodeURIComponent(String(value||'')));return seed&&typeof seed==='object'?seed:null;}catch{return null;}}
+function restoreDecisionInsightButtons(root){
+ root.querySelectorAll('[data-decision-insight]').forEach(btn=>{
+  const seed=decodeDecisionSeed(btn.dataset.decisionSeed);
+  if(seed){decisionInsights.set(btn.dataset.decisionInsight,seed);btn.disabled=false;btn.title='Create a decision from this saved insight.';}
+  else{btn.disabled=true;btn.title='Re-run this question to create a new decision from the latest evidence.';}
+ });
+}
 function persistAnalystThreadFromLog(thread,log){
  if(!log||!thread)return;
  try{
   const pairs=[...log.querySelectorAll('.chat-pair')];
-  while(pairs.length>30){pairs.shift()?.remove();}
-  thread.html=log.innerHTML;
+  while(pairs.length>16){pairs.shift()?.remove();}
+  thread.html=compactAnalystLogHtml(log);
   thread.updatedAt=new Date().toISOString();
   saveAnalystWorkspace();
  }catch{}
@@ -315,7 +346,7 @@ function persistAnalystThread(){
 }
 function restoreAnalystThread(){
  if(view!=='analyst')return;const log=$('#analyst-chat-log'),thread=activeAnalystThread();if(!log||!thread)return;
- if(thread.html){log.innerHTML=thread.html;chatCount=log.querySelectorAll('.chat-pair').length;log.querySelectorAll('.chat-pair').forEach(ensureChatActions);log.querySelectorAll('[data-decision-insight]').forEach(btn=>{btn.disabled=true;btn.title='Re-run this question to create a new decision from the latest evidence.';});if(chatCount)log.scrollTop=log.scrollHeight;}else chatCount=0;
+ if(thread.html){log.innerHTML=thread.html;chatCount=log.querySelectorAll('.chat-pair').length;log.querySelectorAll('.chat-pair').forEach(ensureChatActions);restoreDecisionInsightButtons(log);if(chatCount)log.scrollTop=log.scrollHeight;}else chatCount=0;
 }
 function newAnalystChat(projectId=''){
  persistAnalystThread();const thread=blankAnalystThread(projectId);analystWorkspace.threads.unshift(thread);analystWorkspace.activeThreadId=thread.id;saveAnalystWorkspace();chatCount=0;render();requestAnimationFrame(()=>$('#analyst-question')?.focus());
@@ -417,11 +448,13 @@ async function ask(q){
   const sql=a.sql?`<details class="analyst-sql"><summary>Audit trail · View generated SQL</summary><pre>${e(a.sql)}</pre></details>`:'';
   const warning=a.executionWarning?`<p class="analyst-warning">${e(a.executionWarning)}</p>`:'';
   const suggestions=a.suggestions?.length?`<div class="analyst-suggestions"><span>Explore next</span>${a.suggestions.map(s=>`<button type="button" data-question="${e(s)}">${e(s)}</button>`).join('')}</div>`:'';
-  const rec=hasRows?recommendationFor(question,a.result):null;if(rec)decisionInsights.set(rid,{title:rec.title,problem:block.querySelector('.user-question')?.textContent?`${analystNarrative(question,a.result,a.text||'').replace(/<[^>]+>/g,'')}`:'',action:rec.action,owner:rec.owner,priority:'High',status:'Assigned',expectedImpact:rec.expectedImpact,source:'Cortex Analyst'});
-  const recHtml=rec&&(wantsRecommendation||/EXPOSURE|RISK|DELAY|SHORTAGE/i.test(question))?`<section class="recommendation-card"><span class="eyebrow">RECOMMENDED NEXT MOVE</span><h4>${e(rec.title)}</h4><p>${e(rec.action)}</p><div><span>Suggested owner</span><strong>${e(rec.owner)}</strong></div></section>`:'';
-  const decisionButton=hasRows&&rec?`<div class="analyst-actions"><button class="secondary small" data-decision-insight="${e(rid)}">${icon('check')}Create decision from insight</button></div>`:'';
-  const interpretation=analysisQuestion!==question?`<p class="query-split-note">I answered the analytical part with Cortex Analyst, then generated the recommended action from the returned evidence.</p>`:'';
   const narrative=analystNarrative(question,a.result||{columns:[],rows:[]},a.text||'');
+  const rec=hasRows?recommendationFor(question,a.result):null;
+  const decisionSeed=rec?{title:rec.title,problem:block.querySelector('.user-question')?.textContent?narrative.replace(/<[^>]+>/g,''):'',action:rec.action,owner:rec.owner,priority:'High',status:'Assigned',expectedImpact:rec.expectedImpact,source:'Cortex Analyst'}:null;
+  if(decisionSeed)decisionInsights.set(rid,decisionSeed);
+  const recHtml=rec&&(wantsRecommendation||/EXPOSURE|RISK|DELAY|SHORTAGE/i.test(question))?`<section class="recommendation-card"><span class="eyebrow">RECOMMENDED NEXT MOVE</span><h4>${e(rec.title)}</h4><p>${e(rec.action)}</p><div><span>Suggested owner</span><strong>${e(rec.owner)}</strong></div></section>`:'';
+  const decisionButton=hasRows&&decisionSeed?`<div class="analyst-actions"><button class="secondary small" data-decision-insight="${e(rid)}" data-decision-seed="${e(encodeDecisionSeed(decisionSeed))}">${icon('check')}Create decision from insight</button></div>`:'';
+  const interpretation=analysisQuestion!==question?`<p class="query-split-note">I answered the analytical part with Cortex Analyst, then generated the recommended action from the returned evidence.</p>`:'';
   answerEl.innerHTML=`<div class="answer-heading">${icon('chat')}<strong>OntoTrail Intelligence</strong><span class="live-pill">LIVE · SNOWFLAKE CORTEX</span></div><p class="direct-answer" data-stream-text></p><div class="analyst-reveal" hidden>${interpretation}${recHtml}${resultHtml}${warning}${decisionButton}${sql}${suggestions}<small>Grounded in ${e(a.semanticView||'ONTOTRAIL_TRADE_RISK_ANALYST')} · Request ${e(a.requestId||'Snowflake')}</small></div><div class="assistant-response-actions"><button class="chat-action" type="button" data-chat-copy aria-label="Copy response" title="Copy response">Copy</button><button class="chat-action" type="button" data-chat-retry aria-label="Try again" title="Try again">Try again</button></div>`;
   await revealNarrative(answerEl,narrative);
   const reveal=answerEl.querySelector('.analyst-reveal');if(reveal){reveal.hidden=false;requestAnimationFrame(()=>reveal.classList.add('visible'));}
