@@ -38,7 +38,7 @@ export function overview(ctx){
  <section class="panel"><div class="panel-heading"><div><h2>Top risks requiring attention</h2><p>Executive prioritization only. Open Nova operations for the underlying supplier, PO, shipment and inventory records.</p></div><button class="text-button" data-action="go-operations">Open Nova operations ${icon('arrow')}</button></div>
   <div class="saved-grid">${attention.map(x=>`<article class="saved-card"><span class="eyebrow">${e(x.kicker)}</span><h3>${e(x.title)}</h3><p>${e(x.body)}</p><button class="secondary small" data-question="${e(x.question)}">Investigate with Cortex</button></article>`).join('')||'<p>No priority risks are currently available.</p>'}</div>
  </section>
- <div class="overview-grid">
+ <div class="overview-grid control-tower-split">
   <section class="panel"><div class="panel-heading"><div><h2>Operational health</h2><p>Nova Mobility internal status at a glance.</p></div><button class="text-button" data-action="go-operations">View detailed records ${icon('arrow')}</button></div>
    <div class="guide-columns"><div><h3>${Number(s.supplierCount||0)} active suppliers</h3><p>${Number(s.poCount||0)} purchase orders are represented in the synthetic ERP layer.</p><h3>${delayedSuppliers.length} suppliers with delayed POs</h3><p>Use Nova operations to inspect the specific PO, material, plant, shipment and inventory context.</p></div><div><h3>${lowCoverSuppliers.length} suppliers below 7 days cover</h3><p>Inventory cover is derived from Nova's synthetic internal inventory data.</p><h3>${highRiskPos.length} high-risk PO records</h3><p>Operational risk combines PO status and inventory cover; it is not a financial-loss forecast.</p></div></div>
   </section>
@@ -49,7 +49,7 @@ export function overview(ctx){
    <div class="supplier-row"><span class="supplier-avatar">4</span><span class="supplier-copy"><strong>${pct(market.weatherCoveragePct)} Marketplace weather coverage</strong><small>Coverage of the external India trade dataset</small></span></div>
   </section>
  </div>
- <section class="panel"><div class="panel-heading"><div><h2>Recommended next action</h2><p>Move from executive signal to evidence and execution.</p></div></div><div class="governance-flow"><span>Identify risk</span>${icon('arrow')}<span>Inspect Nova operations</span>${icon('arrow')}<span>Check Marketplace context</span>${icon('arrow')}<span>Ask Cortex</span>${icon('arrow')}<span>Create decision</span></div></section>
+ <section class="panel control-tower-next"><div class="panel-heading"><div><h2>Recommended next action</h2><p>Move from executive signal to evidence and execution.</p></div></div><div class="control-tower-flow"><span>Identify risk</span>${icon('arrow')}<span>Inspect Nova operations</span>${icon('arrow')}<span>Check Marketplace context</span>${icon('arrow')}<span>Ask Cortex</span>${icon('arrow')}<span>Create decision</span></div></section>
  <div class="bottom-note">${icon('info')}Control Tower is an executive summary. Detailed operational records live in Nova operations; TradePrism and Pelmorex remain supporting external intelligence.</div>`;
 }
 export function ordersView(ctx){
