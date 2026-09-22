@@ -47,7 +47,7 @@ DIMENSIONS (
 METRICS (
     trade_risk.total_nominal_trade_value_usd AS SUM(trade_risk.NOMINAL_TRADE_VALUE)
         WITH SYNONYMS = ('trade value', 'nominal trade value', 'total trade value', 'exposure', 'trade exposure', 'import exposure', 'export exposure')
-        COMMENT = 'Sum of nominal bilateral trade value in USD for the selected flows.',
+        COMMENT = 'Sum of nominal bilateral trade value in USD for the selected flows. Apply TRADE_DIRECTION = IMPORT for India import analysis and EXPORT for India export analysis.',
     trade_risk.total_real_trade_value_usd AS SUM(trade_risk.REAL_TRADE_VALUE)
         WITH SYNONYMS = ('real trade value', 'constant dollar trade value', 'inflation adjusted trade value')
         COMMENT = 'Sum of real bilateral trade value in constant USD.',
@@ -64,7 +64,8 @@ METRICS (
     trade_risk.land_dependency_pct AS SUM(trade_risk.NOMINAL_BY_LAND) / NULLIF(SUM(trade_risk.NOMINAL_TRADE_VALUE), 0) * 100
         WITH SYNONYMS = ('land dependency', 'land share', 'road rail dependency'),
     trade_risk.sea_dependency_pct AS SUM(trade_risk.NOMINAL_BY_SEA) / NULLIF(SUM(trade_risk.NOMINAL_TRADE_VALUE), 0) * 100
-        WITH SYNONYMS = ('sea dependency', 'sea share', 'maritime dependency', 'ocean dependency'),
+        WITH SYNONYMS = ('sea dependency', 'sea share', 'maritime dependency', 'ocean dependency')
+        COMMENT = 'Share of nominal trade value carried by sea within the currently filtered trade flows. For India import sea dependency, filter TRADE_DIRECTION = IMPORT.',
     trade_risk.import_value_usd AS SUM(IFF(trade_risk.TRADE_DIRECTION = 'IMPORT', trade_risk.NOMINAL_TRADE_VALUE, 0))
         WITH SYNONYMS = ('India import value', 'imports', 'import exposure', 'inbound trade value'),
     trade_risk.export_value_usd AS SUM(IFF(trade_risk.TRADE_DIRECTION = 'EXPORT', trade_risk.NOMINAL_TRADE_VALUE, 0))
@@ -72,7 +73,8 @@ METRICS (
     trade_risk.weather_covered_trade_value_usd AS SUM(IFF(trade_risk.WEATHER_DATA_AVAILABLE, trade_risk.NOMINAL_TRADE_VALUE, 0))
         WITH SYNONYMS = ('weather covered trade value', 'trade value with weather data', 'weather intelligence coverage value'),
     trade_risk.weather_coverage_pct AS SUM(IFF(trade_risk.WEATHER_DATA_AVAILABLE, trade_risk.NOMINAL_TRADE_VALUE, 0)) / NULLIF(SUM(trade_risk.NOMINAL_TRADE_VALUE), 0) * 100
-        WITH SYNONYMS = ('weather coverage percentage', 'weather data coverage', 'external signal coverage percentage'),
+        WITH SYNONYMS = ('weather coverage percentage', 'weather data coverage', 'external signal coverage percentage')
+        COMMENT = 'Share of nominal trade value with Pelmorex origin-country coverage within the currently filtered trade flows. For India import weather coverage, filter TRADE_DIRECTION = IMPORT.',
     trade_risk.elevated_weather_risk_trade_value_usd AS SUM(IFF(trade_risk.WEATHER_RISK_LEVEL IN ('MEDIUM','HIGH'), trade_risk.NOMINAL_TRADE_VALUE, 0))
         WITH SYNONYMS = ('weather exposed trade value', 'elevated weather risk exposure', 'trade value at weather risk'),
     trade_risk.trade_weighted_weather_risk_score AS
@@ -90,7 +92,7 @@ METRICS (
         WITH SYNONYMS = ('commodity count', 'number of commodities', 'hs4 count')
 )
 COMMENT = 'OntoTrail governed India trade-risk semantic view combining Oxford Economics TradePrism bilateral trade intelligence with Pelmorex weather signals.'
-AI_SQL_GENERATION 'TradePrism rows represent annual bilateral trade flows and forecasts, not individual shipments or purchase orders. Use TRADE_YEAR whenever the user gives a year. For India imports use TRADE_DIRECTION = IMPORT or DESTINATION_ISO = IND. For India exports use TRADE_DIRECTION = EXPORT or ORIGIN_ISO = IND. Only compare weather risk for rows where WEATHER_COVERAGE_STATUS = AVAILABLE unless the user explicitly asks to include uncovered countries. Never invent weather risk for uncovered countries. WEATHER_RISK_SCORE and affected-location measures are OntoTrail-derived heuristics based on Pelmorex forecasts. Trade value metrics are USD. Prefer semantic metrics instead of re-deriving their formulas. When ranking countries, use ORIGIN_COUNTRY when available and retain ORIGIN_ISO for traceability.'
+AI_SQL_GENERATION 'TradePrism rows represent annual bilateral trade flows and forecasts, not individual shipments or purchase orders. Use TRADE_YEAR whenever the user gives a year. For any India import question, explicitly filter TRADE_DIRECTION = IMPORT so trade value, transport dependency and weather coverage are calculated on imports only. For India export questions, explicitly filter TRADE_DIRECTION = EXPORT. Only compare weather risk for rows where WEATHER_COVERAGE_STATUS = AVAILABLE unless the user explicitly asks to include uncovered countries. Never invent weather risk for uncovered countries. WEATHER_RISK_SCORE and affected-location measures are OntoTrail-derived heuristics based on Pelmorex forecasts. Trade value metrics are USD. Prefer semantic metrics instead of re-deriving their formulas. When ranking countries, use ORIGIN_COUNTRY when available and retain ORIGIN_ISO for traceability.'
 AI_QUESTION_CATEGORIZATION 'This semantic view answers questions about India bilateral trade flows, import and export exposure, commodities, HS4 categories, transport-mode dependency, annual forecasts, weather-data coverage and weather-linked trade risk. If a question asks about individual suppliers, purchase orders, exact shipments, plants, delivery dates or supplier-specific operational events, explain that those entities are outside this Marketplace trade-flow dataset rather than fabricating them.';
 
 CREATE ROLE IF NOT EXISTS ONTOTRAIL_APP_ROLE;
@@ -109,6 +111,8 @@ FROM SEMANTIC_VIEW(
     METRICS trade_risk.import_value_usd,
             trade_risk.sea_dependency_pct,
             trade_risk.weather_coverage_pct
-    DIMENSIONS trade_risk.trade_year
+    DIMENSIONS trade_risk.trade_year,
+               trade_risk.trade_direction
     WHERE trade_risk.trade_year = 2026
+      AND trade_risk.trade_direction = 'IMPORT'
 );
