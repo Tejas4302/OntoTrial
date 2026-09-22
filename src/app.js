@@ -206,6 +206,78 @@ async function revealNarrative(container,html){
 function analystWorkspaceIdentity(){const s=window.__ONTOTRAIL_SESSION||{};return String(s.email||`${s.tenant||'workspace'}:${s.role||'user'}`).toLowerCase().replace(/[^a-z0-9_-]+/g,'_');}
 function analystWorkspaceKey(){return `ontotrail_analyst_workspace_v2_${analystWorkspaceIdentity()}`;}
 function legacyAnalystWorkspaceKey(){return `ontotrail_analyst_workspace_v1_${analystWorkspaceIdentity()}`;}
+const AUTO_ANALYST_PROJECTS=Object.freeze({
+ overview:{key:'control-tower',name:'Control Tower'},
+ operations:{key:'nova-operations',name:'Nova operations'},
+ orders:{key:'marketplace-intel',name:'Marketplace intel'},
+ network:{key:'trade-network',name:'Trade network'},
+ scenarios:{key:'scenario-lab',name:'Scenario lab'},
+ evidence:{key:'data-sources',name:'Data sources'},
+ governance:{key:'metric-governance',name:'Metric governance'}
+});
+function analystProjectForView(sourceView){
+ const spec=AUTO_ANALYST_PROJECTS[sourceView];if(!spec)return null;
+ let project=analystWorkspace.projects.find(p=>p.systemKey===spec.key);
+ if(!project){
+  project=analystWorkspace.projects.find(p=>String(p.name||'').trim().toLowerCase()===spec.name.toLowerCase());
+  if(project)project.systemKey=spec.key;
+ }
+ if(!project){
+  project={id:crypto.randomUUID(),name:spec.name,systemKey:spec.key,auto:true,createdAt:new Date().toISOString()};
+  analystWorkspace.projects.push(project);
+ }
+ return project;
+}
+function ensureAnalystContextForView(sourceView){
+ const project=analystProjectForView(sourceView);if(!project)return null;
+ persistAnalystThread();
+ let thread=analystWorkspace.threads
+  .filter(t=>t.projectId===project.id)
+  .sort((a,b)=>new Date(b.updatedAt||b.createdAt||0)-new Date(a.updatedAt||a.createdAt||0))[0];
+ if(!thread){
+  thread=blankAnalystThread(project.id);
+  analystWorkspace.threads.unshift(thread);
+ }
+ analystWorkspace.activeThreadId=thread.id;
+ saveAnalystWorkspace();
+ return project;
+}
+function openAnalystForView(sourceView){
+ if(sourceView&&sourceView!=='analyst')ensureAnalystContextForView(sourceView);
+ navigate('analyst');
+}
+function renameAnalystThread(id){
+ const thread=analystWorkspace.threads.find(t=>t.id===id);if(!thread)return;
+ const next=window.prompt('Rename chat',thread.title||'New chat');if(next===null)return;
+ const clean=String(next).trim();if(!clean)return;
+ thread.title=clean.slice(0,80);thread.updatedAt=new Date().toISOString();saveAnalystWorkspace();render();
+}
+function deleteAnalystThread(id){
+ const thread=analystWorkspace.threads.find(t=>t.id===id);if(!thread)return;
+ if(!window.confirm(`Delete chat “${thread.title||'New chat'}”? This cannot be undone.`))return;
+ analystWorkspace.threads=analystWorkspace.threads.filter(t=>t.id!==id);
+ if(!analystWorkspace.threads.length)analystWorkspace.threads=[blankAnalystThread()];
+ if(analystWorkspace.activeThreadId===id)analystWorkspace.activeThreadId=analystWorkspace.threads[0].id;
+ saveAnalystWorkspace();chatCount=0;render();toast('Chat deleted.');
+}
+function renameAnalystProject(id){
+ const project=analystWorkspace.projects.find(p=>p.id===id);if(!project)return;
+ const next=window.prompt('Rename project',project.name||'Project');if(next===null)return;
+ const clean=String(next).trim();if(!clean)return;
+ project.name=clean.slice(0,60);saveAnalystWorkspace();render();
+}
+function deleteAnalystProject(id){
+ const project=analystWorkspace.projects.find(p=>p.id===id);if(!project)return;
+ const count=analystWorkspace.threads.filter(t=>t.projectId===id).length;
+ if(!window.confirm(`Delete project “${project.name}” and ${count} chat${count===1?'':'s'}? This cannot be undone.`))return;
+ const removedIds=new Set(analystWorkspace.threads.filter(t=>t.projectId===id).map(t=>t.id));
+ analystWorkspace.projects=analystWorkspace.projects.filter(p=>p.id!==id);
+ analystWorkspace.threads=analystWorkspace.threads.filter(t=>t.projectId!==id);
+ if(!analystWorkspace.threads.length)analystWorkspace.threads=[blankAnalystThread()];
+ if(removedIds.has(analystWorkspace.activeThreadId))analystWorkspace.activeThreadId=analystWorkspace.threads[0].id;
+ saveAnalystWorkspace();chatCount=0;render();toast('Project deleted.');
+}
+
 function blankAnalystThread(projectId=''){const now=new Date().toISOString();return {id:crypto.randomUUID(),title:'New chat',projectId,createdAt:now,updatedAt:now,html:''};}
 function normalizeAnalystWorkspace(raw){
  const ws=raw&&typeof raw==='object'?raw:{};
@@ -358,7 +430,7 @@ function confirmDelete(id){const s=saved.find(x=>x.id===id);if(!s)return;openDet
 async function share(){if(!/^https?:$/.test(location.protocol)){toast('Use a deployed URL to share a link, or export the scenario JSON.');return;}const url=`${location.origin}${location.pathname}?${encodeScenario(scenario,d)}#${view}`;try{await navigator.clipboard.writeText(url);toast('Scenario link copied.');}catch{openDetail(`<div class="dialog-head"><h2 id="detail-title">Copy this scenario link</h2><button class="icon-button" data-close="detail-dialog" aria-label="Close">${icon('close')}</button></div><div class="detail-body"><label class="field-label" for="share-url">Link with exact assumptions</label><input id="share-url" class="text-input" value="${e(url)}" readonly><p class="helper">Copy the selected text. Saved scenario names and browser activity are not included.</p></div>`);$('#share-url').select();}}
 function showClear(){openDetail(`<div class="dialog-head"><h2 id="detail-title">Clear local planning data?</h2><button class="icon-button" data-close="detail-dialog" aria-label="Close">${icon('close')}</button></div><div class="detail-body"><p>This deletes saved scenarios and activity from this browser. Export anything you need first. The active scenario remains available.</p><div class="form-actions"><button class="secondary" data-close="detail-dialog">Cancel</button><button class="primary destructive" data-action="confirm-clear">Clear local data</button></div></div>`);}
 const actions={
- 'go-scenarios':()=>navigate('scenarios'),'go-orders':()=>navigate('orders'),'go-operations':()=>navigate('operations'),'go-decisions':()=>navigate('decisions'),'go-governance':()=>navigate('governance'),'new-decision':()=>decisionDialog(),'go-about':()=>navigate('about'),'go-profile':()=>navigate('profile'),'go-overview':()=>navigate('overview'),'go-analyst':()=>navigate('analyst'),'refresh-trade':()=>refreshTradeData(),
+ 'go-scenarios':()=>navigate('scenarios'),'go-orders':()=>navigate('orders'),'go-operations':()=>navigate('operations'),'go-decisions':()=>navigate('decisions'),'go-governance':()=>navigate('governance'),'new-decision':()=>decisionDialog(),'go-about':()=>navigate('about'),'go-profile':()=>navigate('profile'),'go-overview':()=>navigate('overview'),'go-analyst':()=>openAnalystForView(view),'refresh-trade':()=>refreshTradeData(),
  'menu':()=>{const open=$('#sidebar').classList.toggle('mobile-open');$('.mobile-menu').setAttribute('aria-expanded',String(open));},'sidebar-collapse':toggleSidebar,
  'assistant':showAssistant,'new-chat':()=>newAnalystChat(),'new-project':projectDialog,'clear-chat-history':clearAnalystHistory,'share':share,'save':saveDialog,'export':()=>exportScenario(),
  'export-csv':()=>{downloadFile('ontotrail-orders.csv',orderCSV(result),'text/csv;charset=utf-8');toast('All orders exported for the active scenario.');},
@@ -380,7 +452,11 @@ document.addEventListener('click',event=>{const target=event.target.closest('but
   if(target.dataset.chatEditCancel!==undefined){event.preventDefault();cancelChatEdit(target.closest('.chat-pair'));return;}
   if(target.dataset.chatCopy!==undefined){event.preventDefault();void copyChatResponse(target.closest('.chat-pair'));return;}
   if(target.dataset.chatRetry!==undefined){event.preventDefault();retryChat(target.closest('.chat-pair'));return;}
-  if(target.dataset.question){ask(target.dataset.question);return;}
+  if(target.dataset.chatRename){event.preventDefault();renameAnalystThread(target.dataset.chatRename);return;}
+  if(target.dataset.chatDelete){event.preventDefault();deleteAnalystThread(target.dataset.chatDelete);return;}
+  if(target.dataset.projectRename){event.preventDefault();renameAnalystProject(target.dataset.projectRename);return;}
+  if(target.dataset.projectDelete){event.preventDefault();deleteAnalystProject(target.dataset.projectDelete);return;}
+  if(target.dataset.question){const sourceView=view;if(sourceView!=='analyst')ensureAnalystContextForView(sourceView);ask(target.dataset.question);return;}
   if(target.dataset.threadId){event.preventDefault();selectAnalystThread(target.dataset.threadId);return;}
   if(target.dataset.projectChat!==undefined){event.preventDefault();newAnalystChat(target.dataset.projectChat);return;}
   if(target.dataset.decisionInsight){createDecisionFromInsight(target);return;}
