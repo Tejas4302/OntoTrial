@@ -328,3 +328,44 @@ td .text-button{white-space:nowrap}
   .decision-board{grid-template-columns:repeat(5,270px)}
   .decision-column{min-width:270px}
 }
+
+
+/* v2.5.4 — screenshot-driven Scenario Lab + Decision Board alignment */
+.decision-brief-body{padding:0 22px 22px}
+.scenario-flow{display:grid;grid-template-columns:repeat(5,minmax(0,1fr));gap:10px;margin-bottom:22px}
+.scenario-step{min-width:0;min-height:94px;padding:14px 12px;border:1px solid #dce7e5;border-radius:12px;background:#f6faf9;display:flex;flex-direction:column;align-items:flex-start;justify-content:flex-start;gap:9px}
+.scenario-step span{width:26px;height:26px;border-radius:50%;display:grid;place-items:center;background:#e4f4ef;color:var(--teal);font-size:11px;font-weight:800}
+.scenario-step strong{font-size:12px;line-height:1.4;color:#20475a;overflow-wrap:anywhere}
+.decision-brief-grid{display:grid;grid-template-columns:1fr 1fr;gap:14px}
+.decision-brief-grid article{min-width:0;padding:16px;border:1px solid #e2e9ec;border-radius:10px;background:#fbfcfd}
+.decision-brief-grid .eyebrow{margin-bottom:6px}
+.decision-brief-grid h3{margin:0 0 7px;font-size:13px}
+.decision-brief-grid p{margin:0;color:var(--muted);font-size:12px;line-height:1.65;overflow-wrap:anywhere}
+
+.decision-board-empty{min-height:260px;margin:0 22px 22px;border:1px dashed #cfdde3;border-radius:12px;background:#fafcfd;display:flex;flex-direction:column;align-items:center;justify-content:center;text-align:center;padding:34px}
+.decision-board-empty-icon{width:46px;height:46px;border-radius:14px;display:grid;place-items:center;background:#e9f6f1;color:var(--teal);margin-bottom:12px}
+.decision-board-empty-icon .icon{width:22px;height:22px}
+.decision-board-empty h3{font-size:16px;margin:0 0 7px}
+.decision-board-empty p{max-width:520px;color:var(--muted);font-size:12px;line-height:1.6;margin:0 0 18px}
+
+.decision-checklist-grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:14px;padding:0 22px 22px}
+.decision-checklist-grid article{min-width:0;padding:16px;border:1px solid #e2e9ec;border-radius:10px;background:#fbfcfd}
+.decision-checklist-grid .eyebrow{margin-bottom:5px}
+.decision-checklist-grid h3{margin:0 0 6px;font-size:13px}
+.decision-checklist-grid p{margin:0;color:var(--muted);font-size:12px;line-height:1.6;overflow-wrap:anywhere}
+
+.scenario-layout+.bottom-note{margin-top:14px;padding-left:2px}
+
+@media(max-width:1180px){
+ .scenario-flow{grid-template-columns:repeat(3,minmax(0,1fr))}
+}
+@media(max-width:820px){
+ .decision-brief-body{padding:0 16px 16px}
+ .scenario-flow{grid-template-columns:1fr 1fr}
+ .decision-brief-grid,.decision-checklist-grid{grid-template-columns:1fr}
+ .decision-checklist-grid{padding-left:16px;padding-right:16px}
+ .decision-board-empty{margin-left:16px;margin-right:16px}
+}
+@media(max-width:520px){
+ .scenario-flow{grid-template-columns:1fr}
+}
