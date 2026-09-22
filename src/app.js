@@ -153,6 +153,56 @@ function analystNarrative(question,result,cortexText=''){
      }
    }
  }
+ const poExposureIntent=/\b(delayed|outstanding|received|purchase order|\bpo\b)\b/i.test(q)&&/\b(exposure|supplier|value|count|which|show|list|affecting)\b/i.test(q);
+ if(poExposureIntent){
+  const cols=m.columns.map(c=>String(c));const find=(patterns)=>cols.find(c=>{const u=c.toUpperCase();return patterns.some(p=>p.test(u));});
+  const supplierCol=find([/SUPPLIER_NAME/]),poCol=find([/^PO_ID$/]),delayedValueCol=find([/DELAYED_PO_VALUE_USD/]),delayedCountCol=find([/DELAYED_PO_COUNT/]),outstandingCol=find([/OUTSTANDING_QUANTITY/]),totalPoCol=find([/TOTAL_PO_VALUE_USD/,/^PO_VALUE_USD$/]),statusCol=find([/PO_STATUS/]),materialCol=find([/MATERIAL_NAME/]);
+  if((supplierCol||poCol)&&m.rows.length){
+   if(supplierCol&&(delayedValueCol||delayedCountCol)){
+    const rows=[...m.rows].sort((a,b)=>(analystNumber(b[delayedValueCol])||0)-(analystNumber(a[delayedValueCol])||0)||(analystNumber(b[delayedCountCol])||0)-(analystNumber(a[delayedCountCol])||0));
+    const totalDelayed=delayedValueCol?rows.reduce((n,r)=>n+(analystNumber(r[delayedValueCol])||0),0):null;
+    const leaders=rows.slice(0,3).map(r=>{const bits=[];if(delayedValueCol)bits.push(analystFormat(delayedValueCol,r[delayedValueCol]));if(delayedCountCol)bits.push(`${analystFormat(delayedCountCol,r[delayedCountCol])} delayed POs`);if(outstandingCol&&analystNumber(r[outstandingCol])!==null)bits.push(`${analystFormat(outstandingCol,r[outstandingCol])} outstanding units`);return `<strong>${e(r[supplierCol])}</strong> (${bits.join(' · ')})`;}).join(', ');
+    return `${totalDelayed!==null?`Total delayed PO exposure across the returned suppliers is <strong>${analystFormat(delayedValueCol,totalDelayed)}</strong>. `:''}The largest delayed exposures are ${leaders}. Decision focus: prioritize suppliers with both high delayed value and material outstanding quantity, then confirm promised dates and recovery options.`;
+   }
+   if(poCol){
+    const risky=[...m.rows].filter(r=>!statusCol||/DELAYED|PARTIALLY_RECEIVED|IN_TRANSIT/i.test(String(r[statusCol]||''))).sort((a,b)=>(analystNumber(b[totalPoCol])||0)-(analystNumber(a[totalPoCol])||0));
+    const rows=risky.length?risky:m.rows;const leaders=rows.slice(0,5).map(r=>{const bits=[];if(statusCol&&r[statusCol])bits.push(e(r[statusCol]));if(totalPoCol&&analystNumber(r[totalPoCol])!==null)bits.push(analystFormat(totalPoCol,r[totalPoCol]));if(outstandingCol&&analystNumber(r[outstandingCol])!==null)bits.push(`${analystFormat(outstandingCol,r[outstandingCol])} outstanding`);if(materialCol&&r[materialCol])bits.push(e(r[materialCol]));return `<strong>${e(r[poCol])}</strong> (${bits.join(' · ')})`;}).join(', ');
+    return `The purchase orders needing the most attention are ${leaders}. Review supplier commitments and ETA evidence before changing procurement actions.`;
+   }
+  }
+ }
+ const inventoryIntent=/\b(inventory|stock|days? of cover|cover|safety stock)\b/i.test(q);
+ if(inventoryIntent){
+  const cols=m.columns.map(c=>String(c));const find=(patterns)=>cols.find(c=>{const u=c.toUpperCase();return patterns.some(p=>p.test(u));});
+  const materialCol=find([/MATERIAL_NAME/]),coverCol=find([/MINIMUM_DAYS_OF_COVER/,/AVERAGE_DAYS_OF_COVER/,/^DAYS_OF_COVER$/]),outstandingCol=find([/OUTSTANDING_QUANTITY/]),plantCol=find([/PLANT_NAME/]),criticalityCol=find([/MATERIAL_CRITICALITY/]),supplierCol=find([/SUPPLIER_NAME/]),delayedValueCol=find([/DELAYED_PO_VALUE_USD/]);
+  if(materialCol&&coverCol&&m.rows.length){
+   const rows=[...m.rows].filter(r=>analystNumber(r[coverCol])!==null).sort((a,b)=>analystNumber(a[coverCol])-analystNumber(b[coverCol]));
+   const leaders=rows.slice(0,3).map(r=>{const bits=[analystFormat(coverCol,r[coverCol])];if(criticalityCol&&r[criticalityCol])bits.push(`${e(r[criticalityCol])} criticality`);if(outstandingCol&&analystNumber(r[outstandingCol])!==null)bits.push(`${analystFormat(outstandingCol,r[outstandingCol])} outstanding`);if(delayedValueCol&&analystNumber(r[delayedValueCol])!==null)bits.push(`${analystFormat(delayedValueCol,r[delayedValueCol])} delayed value`);if(supplierCol&&r[supplierCol])bits.push(e(r[supplierCol]));if(plantCol&&r[plantCol])bits.push(e(r[plantCol]));return `<strong>${e(r[materialCol])}</strong> (${bits.join(' · ')})`;}).join(', ');
+   return `The lowest inventory cover is concentrated in ${leaders}. Decision focus: secure the lowest-cover critical materials first and trace the delayed or outstanding POs feeding those materials.`;
+  }
+ }
+ const plantIntent=/\b(plant|factory|bengaluru|pune|chennai|hyderabad)\b/i.test(q)&&/\b(risk|expos|disruption|most|highest)\b/i.test(q);
+ if(plantIntent){
+  const cols=m.columns.map(c=>String(c));const find=(patterns)=>cols.find(c=>{const u=c.toUpperCase();return patterns.some(p=>p.test(u));});
+  const plantCol=find([/PLANT_NAME/]),riskValueCol=find([/HIGH_OPERATIONAL_RISK_PO_VALUE_USD/]),delayedCountCol=find([/DELAYED_PO_COUNT/]),coverCol=find([/MINIMUM_DAYS_OF_COVER/]),poValueCol=find([/TOTAL_PO_VALUE_USD/]);
+  if(plantCol&&m.rows.length){
+   const max=(col)=>col?Math.max(...m.rows.map(r=>analystNumber(r[col])||0),0):0;const mr=max(riskValueCol),md=max(delayedCountCol),mp=max(poValueCol),mc=max(coverCol);
+   const score=r=>(mr?((analystNumber(r[riskValueCol])||0)/mr)*45:0)+(md?((analystNumber(r[delayedCountCol])||0)/md)*20:0)+(mp?((analystNumber(r[poValueCol])||0)/mp)*20:0)+(mc?(1-Math.min(1,(analystNumber(r[coverCol])||0)/mc))*15:0);
+   const rows=[...m.rows].map(r=>({r,score:score(r)})).sort((a,b)=>b.score-a.score);const top=rows[0];if(top){const r=top.r;const bits=[];if(riskValueCol)bits.push(`high-risk PO value ${analystFormat(riskValueCol,r[riskValueCol])}`);if(delayedCountCol)bits.push(`${analystFormat(delayedCountCol,r[delayedCountCol])} delayed POs`);if(coverCol)bits.push(`minimum cover ${analystFormat(coverCol,r[coverCol])}`);return `<strong>${e(r[plantCol])}</strong> has the highest composite plant exposure in the returned data (${top.score.toFixed(0)}/100). Key drivers: ${bits.join(', ')}. The score is a decision-support composite, so use the underlying governed metrics and drill-down rows for the final operational decision.`;}
+  }
+ }
+ const materialRiskIntent=/\b(material|component|part|battery|inverter|motor|semiconductor|connector|pump|thermal)\b/i.test(q)&&/\b(risk|exposure|highest|most|low|cover|disruption)\b/i.test(q);
+ if(materialRiskIntent){
+  const cols=m.columns.map(c=>String(c));const find=(patterns)=>cols.find(c=>{const u=c.toUpperCase();return patterns.some(p=>p.test(u));});
+  const materialCol=find([/MATERIAL_NAME/]),riskValueCol=find([/HIGH_OPERATIONAL_RISK_PO_VALUE_USD/]),poValueCol=find([/TOTAL_PO_VALUE_USD/]),outstandingCol=find([/OUTSTANDING_QUANTITY/]),coverCol=find([/MINIMUM_DAYS_OF_COVER/]),criticalityCol=find([/MATERIAL_CRITICALITY/]);
+  if(materialCol&&m.rows.length){const rows=[...m.rows].sort((a,b)=>(analystNumber(b[riskValueCol])||0)-(analystNumber(a[riskValueCol])||0)||(analystNumber(a[coverCol])??1e9)-(analystNumber(b[coverCol])??1e9));const leaders=rows.slice(0,3).map(r=>{const bits=[];if(riskValueCol&&analystNumber(r[riskValueCol])!==null)bits.push(analystFormat(riskValueCol,r[riskValueCol]));if(poValueCol&&analystNumber(r[poValueCol])!==null)bits.push(`PO ${analystFormat(poValueCol,r[poValueCol])}`);if(outstandingCol&&analystNumber(r[outstandingCol])!==null)bits.push(`${analystFormat(outstandingCol,r[outstandingCol])} outstanding`);if(coverCol&&analystNumber(r[coverCol])!==null)bits.push(analystFormat(coverCol,r[coverCol]));if(criticalityCol&&r[criticalityCol])bits.push(`${e(r[criticalityCol])} criticality`);return `<strong>${e(r[materialCol])}</strong> (${bits.join(' · ')})`;}).join(', ');return `The materials with the strongest risk signals are ${leaders}. Prioritize critical items where high-risk PO exposure overlaps with low cover and outstanding quantity.`;}
+ }
+ const shipmentIntent=/\b(shipment|eta|in transit|booked|logistics)\b/i.test(q);
+ if(shipmentIntent){
+  const cols=m.columns.map(c=>String(c));const find=(patterns)=>cols.find(c=>{const u=c.toUpperCase();return patterns.some(p=>p.test(u));});
+  const shipmentCol=find([/SHIPMENT_ID/]),statusCol=find([/SHIPMENT_STATUS/]),etaCol=find([/ETA_DATE/]),supplierCol=find([/SUPPLIER_NAME/]),materialCol=find([/MATERIAL_NAME/]),outstandingCol=find([/OUTSTANDING_QUANTITY/]);
+  if(shipmentCol&&m.rows.length){const delayed=m.rows.filter(r=>/DELAYED/i.test(String(r[statusCol]||'')));const focus=delayed.length?delayed:m.rows;const leaders=focus.slice(0,5).map(r=>{const bits=[];if(statusCol&&r[statusCol])bits.push(e(r[statusCol]));if(etaCol&&r[etaCol])bits.push(`ETA ${e(r[etaCol])}`);if(outstandingCol&&analystNumber(r[outstandingCol])!==null)bits.push(`${analystFormat(outstandingCol,r[outstandingCol])} outstanding`);if(supplierCol&&r[supplierCol])bits.push(e(r[supplierCol]));if(materialCol&&r[materialCol])bits.push(e(r[materialCol]));return `<strong>${e(r[shipmentCol])}</strong> (${bits.join(' · ')})`;}).join(', ');return `${delayed.length?`${delayed.length} delayed shipment${delayed.length===1?'':'s'} are visible in the returned evidence. `:''}${leaders?`Priority shipments: ${leaders}.`:''} Use the shipment status and ETA as the operational source of truth; external market dependency is context only.`;}
+ }
  const supplierRiskIntent=/\b(supplier|vendor)\b/i.test(q)&&/\b(worry|risk|highest|most|rank|priority|exposure)\b/i.test(q);
  if(supplierRiskIntent){
   const cols=m.columns.map(c=>String(c));const find=(patterns)=>cols.find(c=>{const u=c.toUpperCase();return patterns.some(p=>p.test(u));});
