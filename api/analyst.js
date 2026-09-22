@@ -62,7 +62,10 @@ export default async function handler(req,res){
   const question=String(req.body?.question||'').trim();
   if(!question||question.length>MAX_QUESTION)return send(res,400,{error:`Enter a question between 1 and ${MAX_QUESTION} characters.`});
 
-  const governedQuestion=question;
+  const rowIntent=/\b(rest of world|row)\b/i.test(question);
+  const governedQuestion=rowIntent
+    ? question + "\n\nGoverned interpretation: Rest of World/ROW is the aggregate origin identified by ORIGIN_ISO = 'ROW'. You MUST filter ORIGIN_ISO = 'ROW' and must not replace it with a ranking of other countries. If the question asks for commodity concentration, include a commodity breakdown rather than only a commodity count. Treat ROW as an aggregate geography; only report weather if aggregate-row coverage exists and do not infer weather from constituent countries."
+    : question;
   const novaIntent=/\b(nova|supplier|vendor|purchase order|\bpo\b|inventory|days? of cover|stock cover|shipment|material|component|plant|delayed po|operational risk)\b/i.test(question);
   const semanticView=novaIntent?novaSemanticView:tradeSemanticView;
 
