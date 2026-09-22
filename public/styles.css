@@ -70,3 +70,19 @@
 .sidebar-profile-arrow{margin-left:auto!important;font-size:20px!important;color:#6f91a4!important;line-height:1}
 .sidebar-profile:hover .sidebar-profile-arrow{color:#b9d7e2!important}
 .analyst-clear-history{margin-right:4px;align-self:center}
+
+/* v1.6.0 — multi-chat AI Analyst projects */
+.analyst-workspace{display:grid;grid-template-columns:250px minmax(0,1fr);gap:18px;align-items:start}
+.analyst-library{position:sticky;top:126px;max-height:calc(100vh - 150px);background:#fff;border:1px solid var(--border);border-radius:10px;overflow:hidden}
+.analyst-library-actions{display:grid;grid-template-columns:1fr 1fr;gap:8px;padding:12px;border-bottom:1px solid var(--border)}
+.analyst-library-actions button{min-width:0}
+.analyst-library-scroll{max-height:calc(100vh - 220px);overflow:auto;padding:10px}
+.analyst-library-label{font-size:9px;letter-spacing:.12em;color:#81939f;font-weight:700;padding:7px 7px 5px}
+.analyst-thread{width:100%;display:grid;grid-template-columns:20px minmax(0,1fr);gap:8px;text-align:left;justify-content:start;border:0;background:transparent;padding:9px 8px;border-radius:7px;color:#496577;margin-bottom:2px}
+.analyst-thread:hover{background:#f2f7f8}.analyst-thread.active{background:#e9f6f1;color:#0b6b5d}
+.analyst-thread>.icon,.analyst-thread>span:first-child .icon{width:15px;height:15px;margin-top:2px}
+.analyst-thread>span:last-child{min-width:0}.analyst-thread strong{display:block;font-size:11px;font-weight:650;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}.analyst-thread small{display:block;font-size:9px;color:#8899a4;margin-top:2px}
+.analyst-project{border-top:1px solid #eef2f4;padding-top:7px;margin-top:7px}.analyst-project-head{display:flex;align-items:center;justify-content:space-between;gap:6px;padding:3px 5px 5px;font-size:10px;font-weight:700;color:#476476;text-transform:uppercase;letter-spacing:.06em}.analyst-project-head>span{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}.analyst-project-head .icon-button{width:24px;height:24px;font-size:16px}.analyst-project-empty{font-size:10px;color:#91a0a9;padding:6px 8px 10px}
+.analyst-workspace .analyst-page{margin-bottom:0}.analyst-suggestion-strip{display:flex;gap:8px;flex-wrap:wrap;padding:12px 24px;border-bottom:1px solid var(--border);background:#fbfcfd}
+.thread-project-picker{display:grid;gap:3px;font-size:9px;text-transform:uppercase;letter-spacing:.06em;color:#758894}.thread-project-picker select{min-width:150px}
+@media(max-width:980px){.analyst-workspace{grid-template-columns:1fr}.analyst-library{position:static;max-height:none}.analyst-library-scroll{max-height:230px}.analyst-page-log{max-height:none}}

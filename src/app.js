@@ -20,6 +20,7 @@ let scenario=initial.scenario,result,draft=clone(scenario),saved=persisted.saved
 let view=Object.hasOwn(VIEWS,location.hash.slice(1))?location.hash.slice(1):'analyst';
 const ui={query:'',status:'all',priority:'all',sort:'due',page:1,partId:d.parts[0].id,evidenceQuery:'',compareId:''};
 let notificationTimer;let dialogFocus;let chatCount=0;const decisionInsights=new Map();
+let analystWorkspace={projects:[],threads:[],activeThreadId:''};
 const navIcons={analyst:'chat',overview:'grid',orders:'orders',network:'network',scenarios:'sliders',evidence:'file',decisions:'check',governance:'shield',profile:'info',about:'info'};
 function toast(message){$('#toast').textContent=message;$('#toast').classList.add('show');clearTimeout(notificationTimer);notificationTimer=setTimeout(()=>$('#toast').classList.remove('show'),5000);}
 function persist(){if(!writeWorkspace(storage,saved,activity))toast('Browser storage is unavailable. Export your scenario before closing this page.');}
@@ -30,10 +31,10 @@ function shell(){
  $('#shell').innerHTML=`<aside class="sidebar" id="sidebar"><a href="#analyst" class="brand" aria-label="OntoTrail AI Analyst"><img class="brand-logo-mark" src="/assets/ontotrail-mark.png" alt=""><span class="brand-wordmark">OntoTrail</span></a><div class="workspace-label">PLANNING WORKSPACE</div><nav aria-label="Main navigation">${Object.entries(VIEWS).filter(([id])=>!['profile','about'].includes(id)).map(([id,label])=>`<a class="nav-item" href="#${id}" data-nav="${id}">${icon(navIcons[id])}<span>${label}</span>${id==='orders'?'<span id="nav-risk-count" class="nav-count"></span>':''}</a>`).join('')}</nav><button class="sidebar-bottom sidebar-profile" data-action="go-profile" type="button" aria-label="Open profile"><div class="workspace-avatar">BA</div><div><strong>Protected workspace</strong><span>Client workspace</span></div><span class="sidebar-profile-arrow">›</span></button><div class="sidebar-version">OntoTrail v${APP.version}<span>Client workspace</span></div></aside><div class="main-wrap"><header class="topbar"><div class="topbar-left"><button class="icon-button mobile-menu" data-action="menu" aria-label="Toggle navigation" aria-expanded="false" aria-controls="sidebar">${icon('menu')}</button><span class="breadcrumb">Workspace <span>/</span> <strong id="current-view"></strong></span></div><form id="global-search" class="global-search">${icon('search')}<label class="sr-only" for="global-query">Find an order</label><input id="global-query" name="query" placeholder="Find an order…" maxlength="100"><button type="submit" class="sr-only">Search</button></form><div class="header-actions"><span class="demo-indicator"><i></i>CoCo CLI Hackathon</span><span class="role-badge" data-role-badge></span><button class="secondary small" data-client-users hidden>Manage users</button><button class="secondary small" data-action="go-about">Workspace guide</button><button class="text-button" data-auth-logout>Log out</button></div></header><div class="notice-bar"><span>${icon('clock')}Protected client workspace · CoCo CLI Hackathon</span><button class="text-button" data-action="go-about">Model scope ${icon('info')}</button></div><main id="main" tabindex="-1"><div id="page-error" class="page-error" role="alert" hidden></div><div id="view-root"></div></main><footer class="footer"><span>Connect the dots. Trace the answers.</span><div><button class="text-button" data-action="share">${icon('share')}Share scenario</button><button class="text-button" data-action="export">${icon('download')}Export scenario</button></div></footer></div><input type="file" id="import-file" class="sr-only" accept="application/json,.json" aria-label="Import an OntoTrail scenario">`;
 }
 function render(){
- try {$('#view-root').innerHTML=viewMap[view]({d,result,draft,saved,activity,ui,decisions});$('#current-view').textContent=VIEWS[view];$('#nav-risk-count').textContent=result.metrics.atRisk;document.querySelectorAll('[data-nav]').forEach(n=>{const active=n.dataset.nav===view;n.classList.toggle('active',active);if(active)n.setAttribute('aria-current','page');else n.removeAttribute('aria-current');});document.title=`OntoTrail · ${VIEWS[view]}`;$('#page-error').hidden=true;if($('#assistant-context'))$('#assistant-context').textContent=`Current: ${scenarioSummary(scenario,d)} · ${scenario.bufferDays}-day buffer`;if($('#analyst-context'))$('#analyst-context').textContent=`Current scenario: ${scenarioSummary(scenario,d)} · ${scenario.bufferDays}-day buffer`;if(view==='analyst')restoreAnalystHistory();}
+ try {$('#view-root').innerHTML=viewMap[view]({d,result,draft,saved,activity,ui,decisions,analystWorkspace});$('#current-view').textContent=VIEWS[view];$('#nav-risk-count').textContent=result.metrics.atRisk;document.querySelectorAll('[data-nav]').forEach(n=>{const active=n.dataset.nav===view;n.classList.toggle('active',active);if(active)n.setAttribute('aria-current','page');else n.removeAttribute('aria-current');});document.title=`OntoTrail · ${VIEWS[view]}`;$('#page-error').hidden=true;if($('#assistant-context'))$('#assistant-context').textContent=`Current: ${scenarioSummary(scenario,d)} · ${scenario.bufferDays}-day buffer`;if($('#analyst-context'))$('#analyst-context').textContent=`Current scenario: ${scenarioSummary(scenario,d)} · ${scenario.bufferDays}-day buffer`;if(view==='analyst')restoreAnalystThread();}
  catch(err){console.error('View rendering failed',err);$('#view-root').replaceChildren();$('#page-error').hidden=false;$('#page-error').innerHTML='<h2>This view could not be displayed</h2><p>Your last valid scenario is retained. Return to the control tower or reload the page.</p><button class="secondary" data-action="go-overview">Control tower</button>';}
 }
-function navigate(next){if(!Object.hasOwn(VIEWS,next))return;if(view!==next&&view==='scenarios')draft=clone(scenario);view=next;$('#sidebar').classList.remove('mobile-open');$('.mobile-menu').setAttribute('aria-expanded','false');if(location.hash!==`#${view}`)history.pushState(null,'',`${location.pathname}?${encodeScenario(scenario,d)}#${view}`);render();$('#main').focus({preventScroll:true});window.scrollTo({top:0,behavior:'instant'});}
+function navigate(next){if(!Object.hasOwn(VIEWS,next))return;if(view!==next&&view==='analyst')persistAnalystThread();if(view!==next&&view==='scenarios')draft=clone(scenario);view=next;$('#sidebar').classList.remove('mobile-open');$('.mobile-menu').setAttribute('aria-expanded','false');if(location.hash!==`#${view}`)history.pushState(null,'',`${location.pathname}?${encodeScenario(scenario,d)}#${view}`);render();$('#main').focus({preventScroll:true});window.scrollTo({top:0,behavior:'instant'});}
 /** Commit only after validation and calculation succeed. */
 function applyScenario(candidate,label){const next=validateScenario(candidate,d);const computed=evaluate(d,next);scenario=next;result=computed;draft=clone(next);log(label);updateURL();render();toast('Scenario applied. All views now use these assumptions.');}
 function openDetail(html){if(!$('#detail-dialog').open)dialogFocus=document.activeElement;$('#detail-content').innerHTML=html;if(!$('#detail-dialog').open)$('#detail-dialog').showModal();}
@@ -100,12 +101,40 @@ function applyAnalystFilters(container){const selects=[...container.querySelecto
 
 function showAssistant(){navigate('analyst');requestAnimationFrame(()=>$('#analyst-question')?.focus());}
 function analystUI(){return {log:$('#analyst-chat-log')||$('#chat-log'),input:$('#analyst-question')||$('#question'),form:$('#analyst-ask-form')||$('#ask-form')};}
-function chatHistoryKey(){const s=window.__ONTOTRAIL_SESSION||{};const identity=String(s.email||`${s.tenant||'workspace'}:${s.role||'user'}`).toLowerCase().replace(/[^a-z0-9_-]+/g,'_');return `ontotrail_analyst_history_v1_${identity}`;}
-function persistAnalystHistory(){const log=$('#analyst-chat-log');if(!log)return;try{const pairs=[...log.querySelectorAll('.chat-pair')];while(pairs.length>20){pairs.shift()?.remove();}storage.setItem(chatHistoryKey(),log.innerHTML);}catch{}}
-function restoreAnalystHistory(){if(view!=='analyst')return;const log=$('#analyst-chat-log');if(!log)return;try{const html=storage.getItem(chatHistoryKey());if(!html){chatCount=0;return;}log.innerHTML=html;chatCount=log.querySelectorAll('.chat-pair').length;log.querySelectorAll('[data-decision-insight]').forEach(btn=>{btn.disabled=true;btn.title='Re-run this question to create a new decision from the latest evidence.';});if(chatCount)log.scrollTop=log.scrollHeight;}catch{}}
-function clearAnalystHistory(){try{storage.removeItem?.(chatHistoryKey());}catch{}chatCount=0;if(view==='analyst'){render();toast('AI Analyst chat history cleared.');}}
+function analystWorkspaceKey(){const s=window.__ONTOTRAIL_SESSION||{};const identity=String(s.email||`${s.tenant||'workspace'}:${s.role||'user'}`).toLowerCase().replace(/[^a-z0-9_-]+/g,'_');return `ontotrail_analyst_workspace_v1_${identity}`;}
+function blankAnalystThread(projectId=''){const now=new Date().toISOString();return {id:crypto.randomUUID(),title:'New chat',projectId,createdAt:now,updatedAt:now,html:''};}
+function normalizeAnalystWorkspace(raw){
+ const ws=raw&&typeof raw==='object'?raw:{};
+ ws.projects=Array.isArray(ws.projects)?ws.projects:[];
+ ws.threads=Array.isArray(ws.threads)?ws.threads:[];
+ if(!ws.threads.length)ws.threads=[blankAnalystThread()];
+ if(!ws.activeThreadId||!ws.threads.some(t=>t.id===ws.activeThreadId))ws.activeThreadId=ws.threads[0].id;
+ return ws;
+}
+function loadAnalystWorkspace(){
+ try{const raw=storage.getItem(analystWorkspaceKey());analystWorkspace=normalizeAnalystWorkspace(raw?JSON.parse(raw):null);}catch{analystWorkspace=normalizeAnalystWorkspace(null);}
+}
+function saveAnalystWorkspace(){try{storage.setItem(analystWorkspaceKey(),JSON.stringify(analystWorkspace));}catch{}}
+function activeAnalystThread(){return analystWorkspace.threads.find(t=>t.id===analystWorkspace.activeThreadId)||analystWorkspace.threads[0];}
+function persistAnalystThread(){
+ const log=$('#analyst-chat-log'),thread=activeAnalystThread();if(!log||!thread)return;
+ try{const pairs=[...log.querySelectorAll('.chat-pair')];while(pairs.length>30){pairs.shift()?.remove();}thread.html=log.innerHTML;thread.updatedAt=new Date().toISOString();saveAnalystWorkspace();}catch{}
+}
+function restoreAnalystThread(){
+ if(view!=='analyst')return;const log=$('#analyst-chat-log'),thread=activeAnalystThread();if(!log||!thread)return;
+ if(thread.html){log.innerHTML=thread.html;chatCount=log.querySelectorAll('.chat-pair').length;log.querySelectorAll('[data-decision-insight]').forEach(btn=>{btn.disabled=true;btn.title='Re-run this question to create a new decision from the latest evidence.';});if(chatCount)log.scrollTop=log.scrollHeight;}else chatCount=0;
+}
+function newAnalystChat(projectId=''){
+ persistAnalystThread();const thread=blankAnalystThread(projectId);analystWorkspace.threads.unshift(thread);analystWorkspace.activeThreadId=thread.id;saveAnalystWorkspace();chatCount=0;render();requestAnimationFrame(()=>$('#analyst-question')?.focus());
+}
+function selectAnalystThread(id){if(!analystWorkspace.threads.some(t=>t.id===id))return;persistAnalystThread();analystWorkspace.activeThreadId=id;saveAnalystWorkspace();chatCount=0;render();}
+function projectDialog(){
+ openDetail(`<div class="dialog-head"><div><span class="eyebrow">AI ANALYST</span><h2 id="detail-title">Create project</h2><p>Group related chat threads into one working space.</p></div><button class="icon-button" data-close="detail-dialog" aria-label="Close">×</button></div><form id="project-form" class="detail-body"><label class="field-label">Project name<input class="text-input" name="name" required maxlength="60" placeholder="e.g. Aruna recovery analysis" autofocus></label><div class="form-actions"><button type="button" class="secondary" data-close="detail-dialog">Cancel</button><button class="primary">Create project</button></div></form>`);
+}
+function createAnalystProject(name){const clean=String(name||'').trim();if(!clean)return;const p={id:crypto.randomUUID(),name:clean,createdAt:new Date().toISOString()};analystWorkspace.projects.push(p);const t=blankAnalystThread(p.id);analystWorkspace.threads.unshift(t);analystWorkspace.activeThreadId=t.id;saveAnalystWorkspace();closeDialog('detail-dialog');chatCount=0;navigate('analyst');}
+function clearAnalystHistory(){const thread=activeAnalystThread();if(!thread)return;thread.html='';thread.title='New chat';thread.updatedAt=new Date().toISOString();saveAnalystWorkspace();chatCount=0;if(view==='analyst'){render();toast('Current chat cleared.');}}
 async function ask(q){
- const question=q.trim();if(!question)return;if(view!=='analyst')navigate('analyst');const chat=analystUI();if(!chatCount)chat.log?.replaceChildren();
+ const question=q.trim();if(!question)return;if(view!=='analyst')navigate('analyst');const chat=analystUI();if(!chatCount){chat.log?.replaceChildren();const thread=activeAnalystThread();if(thread&&thread.title==='New chat'){thread.title=question.length>52?`${question.slice(0,49)}…`:question;saveAnalystWorkspace();}}
  const {analysisQuestion,wantsRecommendation}=splitCompoundQuestion(question);
  const block=document.createElement('article');block.className='chat-pair';block.innerHTML=`<p class="user-question">${e(question)}</p><div class="assistant-answer"><div class="answer-heading">${icon('chat')}<strong>Asking Snowflake Cortex Analyst…</strong></div><p>Grounding your question in the OntoTrail semantic view.</p></div>`;chat.log?.append(block);chatCount++;if(chat.input){chat.input.value='';chat.input.disabled=true;}const askButton=chat.form?.querySelector('button[type="submit"]');if(askButton)askButton.disabled=true;if(chat.log)chat.log.scrollTop=chat.log.scrollHeight;
  try{
@@ -120,7 +149,7 @@ async function ask(q){
   block.querySelector('.assistant-answer').innerHTML=`<div class="answer-heading">${icon('chat')}<strong>OntoTrail Intelligence</strong><span class="live-pill">LIVE · SNOWFLAKE CORTEX</span></div><p class="direct-answer">${analystNarrative(question,a.result||{columns:[],rows:[]})}</p>${interpretation}${recHtml}${resultHtml}${warning}${decisionButton}${sql}${suggestions}<small>Grounded in ONTOTRAIL_COCO_ANALYST · Request ${e(a.requestId||'Snowflake')}</small>`;
  }catch(err){
   const local=answer(question,d,result);block.querySelector('.assistant-answer').innerHTML=`<div class="answer-heading">${icon('chat')}<strong>Local fallback · ${e(local.title)}</strong></div><p>${e(local.text)}</p>${evidenceButtons(local.ids)}<small>Cortex Analyst unavailable: ${e(err.message||'connection error')}</small>`;
- }finally{const current=analystUI();if(current.input){current.input.disabled=false;current.input.focus();}const btn=current.form?.querySelector('button[type="submit"]');if(btn)btn.disabled=false;if(current.log)current.log.scrollTop=current.log.scrollHeight;persistAnalystHistory();}
+ }finally{const current=analystUI();if(current.input){current.input.disabled=false;current.input.focus();}const btn=current.form?.querySelector('button[type="submit"]');if(btn)btn.disabled=false;if(current.log)current.log.scrollTop=current.log.scrollHeight;persistAnalystThread();}
 }
 function decisionDialog(seed={}){
  const today=new Date().toISOString().slice(0,10);const due=seed.due||today;
@@ -138,7 +167,7 @@ function showClear(){openDetail(`<div class="dialog-head"><h2 id="detail-title">
 const actions={
  'go-scenarios':()=>navigate('scenarios'),'go-orders':()=>navigate('orders'),'go-decisions':()=>navigate('decisions'),'new-decision':()=>decisionDialog(),'go-about':()=>navigate('about'),'go-profile':()=>navigate('profile'),'go-overview':()=>navigate('overview'),'go-analyst':()=>navigate('analyst'),
  'menu':()=>{const open=$('#sidebar').classList.toggle('mobile-open');$('.mobile-menu').setAttribute('aria-expanded',String(open));},
- 'assistant':showAssistant,'clear-chat-history':clearAnalystHistory,'share':share,'save':saveDialog,'export':()=>exportScenario(),
+ 'assistant':showAssistant,'new-chat':()=>newAnalystChat(),'new-project':projectDialog,'clear-chat-history':clearAnalystHistory,'share':share,'save':saveDialog,'export':()=>exportScenario(),
  'export-csv':()=>{downloadFile('ontotrail-orders.csv',orderCSV(result),'text/csv;charset=utf-8');toast('All orders exported for the active scenario.');},
  'draft-baseline':()=>{draft=baseline(d);render();toast('Preview reset to zero delays. Apply to update the workspace.');},
  'draft-reset':()=>{draft=clone(scenario);render();toast('Unapplied changes discarded.');},
@@ -153,6 +182,8 @@ document.addEventListener('click',event=>{const target=event.target.closest('but
   if(target.dataset.source){event.preventDefault();if($('#assistant-dialog').open)$('#assistant-dialog').close();sourceRecord(target.dataset.source);return;}
   if(target.dataset.nav){event.preventDefault();navigate(target.dataset.nav);return;}
   if(target.dataset.question){ask(target.dataset.question);return;}
+  if(target.dataset.threadId){event.preventDefault();selectAnalystThread(target.dataset.threadId);return;}
+  if(target.dataset.projectChat!==undefined){event.preventDefault();newAnalystChat(target.dataset.projectChat);return;}
   if(target.dataset.decisionInsight){createDecisionFromInsight(target);return;}
   if(target.dataset.decisionStatus){const item=decisions.find(d=>d.id===target.dataset.decisionStatus);if(item){addDecisionActivity(item,target.dataset.nextStatus,`Status changed to ${target.dataset.nextStatus}.`);persistDecisions();void sendDecisionNotification(item);render();toast(`Decision ${item.id} moved to ${item.status}.`);}return;}
   if(target.dataset.decisionView){const item=decisions.find(d=>d.id===target.dataset.decisionView);if(item)decisionDetail(item);return;}
@@ -173,6 +204,7 @@ document.addEventListener('submit',event=>{event.preventDefault();const form=eve
   if(form.id==='order-search'){ui.query=$('#order-query').value.trim();ui.page=1;render();return;}
   if(form.id==='evidence-search'){ui.evidenceQuery=$('#evidence-query').value.trim();render();return;}
   if(form.id==='scenario-form'){applyScenario(draft,'Applied scenario assumptions');return;}
+  if(form.id==='project-form'){const fd=new FormData(form);createAnalystProject(fd.get('name'));return;}
   if(form.id==='decision-form'){const fd=new FormData(form);const createdAt=new Date().toISOString();const item={id:nextDecisionId(decisions),title:String(fd.get('title')||'').trim(),problem:String(fd.get('problem')||'').trim(),action:String(fd.get('action')||'').trim(),owner:String(fd.get('owner')||'').trim(),ownerEmail:String(fd.get('ownerEmail')||'').trim(),due:String(fd.get('due')||''),priority:String(fd.get('priority')||'Medium'),status:String(fd.get('status')||'Proposed'),expectedImpact:String(fd.get('expectedImpact')||'').trim(),scenario:scenarioSummary(scenario,d),source:String(fd.get('source')||'Manual decision'),createdAt,updatedAt:createdAt,notification:{state:'not_sent'},activity:[{status:String(fd.get('status')||'Proposed'),note:String(fd.get('note')||'Decision created.').trim()||'Decision created.',at:createdAt}]};if(!item.title||!item.problem||!item.action||!item.owner||!item.ownerEmail||!item.due)throw Error('Complete the required decision fields.');decisions.unshift(item);persistDecisions();log(`Created decision ${item.id}: ${item.title}`);closeDialog('detail-dialog');navigate('decisions');void sendDecisionNotification(item).then(r=>{render();toast(r.sent?'Decision created and owner notified.':'Decision created. Configure email delivery to send notifications.');});return;}
   if(form.id==='save-form'){const name=$('#scenario-name').value.trim();if(!name||name.length>80){toast('Enter a scenario name of 1–80 characters.');return;}if(saved.length>=APP.maxSaved)throw Error('Maximum of 20 saved scenarios reached.');const item={id:crypto.randomUUID(),name,createdAt:new Date().toISOString(),scenario:clone(scenario)};saved.unshift(item);log(`Saved scenario: ${name}`);closeDialog('detail-dialog');render();toast('Scenario saved on this browser.');}
  }catch(err){toast(err.message||'The form could not be submitted.');}
@@ -189,13 +221,14 @@ document.addEventListener('change',async event=>{const t=event.target;
   if(t.id==='buffer-days'){draft.bufferDays=Number(t.value);previewDraft();}
   if(t.id==='part-select'){ui.partId=t.value;render();}
   if(t.id==='compare-select'){ui.compareId=t.value;render();}
+  if(t.id==='thread-project-select'){const thread=activeAnalystThread();if(thread){thread.projectId=t.value;thread.updatedAt=new Date().toISOString();saveAnalystWorkspace();render();}}
   if(t.id==='import-file'){const file=t.files?.[0];if(!file)return;if(file.size>25000)throw Error('Scenario files must be smaller than 25 KB.');const parsed=parseScenarioFile(await file.text(),d);applyScenario(parsed.scenario,`Imported scenario: ${parsed.name}`);navigate('scenarios');t.value='';}
  }catch(err){toast(err.message||'This change could not be applied.');if(t.id==='import-file')t.value='';}
 });
 window.addEventListener('popstate',()=>{const parsed=decodeScenario(location.search,d);scenario=parsed.scenario;result=evaluate(d,scenario);draft=clone(scenario);view=Object.hasOwn(VIEWS,location.hash.slice(1))?location.hash.slice(1):'analyst';render();if(parsed.warning)toast(parsed.warning);});
 window.addEventListener('hashchange',()=>{const next=location.hash.slice(1);if(Object.hasOwn(VIEWS,next)&&next!==view)navigate(next);});
 for(const dlg of document.querySelectorAll('dialog'))dlg.addEventListener('click',event=>{if(event.target===dlg){const b=dlg.getBoundingClientRect();if(event.clientX<b.left||event.clientX>b.right||event.clientY<b.top||event.clientY>b.bottom)dlg.close();}});
-try{validateDataset(d);result=evaluate(d,scenario);shell();render();initWelcome();if(initial.warning||persisted.warning)toast(initial.warning||persisted.warning);}
+try{validateDataset(d);result=evaluate(d,scenario);loadAnalystWorkspace();shell();render();initWelcome();if(initial.warning||persisted.warning)toast(initial.warning||persisted.warning);}
 catch(err){$('#shell').innerHTML=`<main class="fatal"><h1>OntoTrail could not load its dataset</h1><p>Calculations are unavailable until the source records are corrected.</p><p>${e(err.message)}</p><ul>${(err.issues||[]).map(s=>`<li>${e(s)}</li>`).join('')}</ul></main>`;console.error(err);}
 
-window.addEventListener('ontotrail-session',()=>{if(view==='analyst')restoreAnalystHistory();});
+window.addEventListener('ontotrail-session',()=>{loadAnalystWorkspace();if(view==='analyst')render();});
