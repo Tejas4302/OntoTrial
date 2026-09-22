@@ -8,5 +8,4 @@ entities:
     main_file: streamlit_app.py
     artifacts:
       - streamlit_app.py
-      - pyproject.toml
       - .streamlit/config.toml
