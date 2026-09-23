@@ -19,7 +19,7 @@ let storage;try{storage=window.localStorage;}catch{storage={getItem(){throw Erro
 const persisted=readWorkspace(storage,d),initial=decodeScenario(location.search,d);
 let scenario=initial.scenario,result,draft=clone(scenario),saved=persisted.saved,activity=persisted.activity,decisions=readDecisions(storage);
 let view=Object.hasOwn(VIEWS,location.hash.slice(1))?location.hash.slice(1):'analyst';
-const ui={query:'',status:'all',priority:'all',sort:'due',page:1,partId:d.parts[0].id,evidenceQuery:'',compareId:''};
+const ui={query:'',status:'all',priority:'all',sort:'due',page:1,partId:d.parts[0].id,evidenceQuery:'',compareId:'',aiScenario:null};
 let notificationTimer;let dialogFocus;let chatCount=0;const decisionInsights=new Map();
 let analystWorkspace={projects:[],threads:[],activeThreadId:''};
 let tradeData={loading:true,error:'',summary:null,origins:[],commodities:[],weather:[]};
@@ -522,6 +522,59 @@ function compactAnalystLogHtml(log){
 }
 function encodeDecisionSeed(seed){try{return encodeURIComponent(JSON.stringify(seed||{}));}catch{return '';}}
 function decodeDecisionSeed(value){try{const seed=JSON.parse(decodeURIComponent(String(value||'')));return seed&&typeof seed==='object'?seed:null;}catch{return null;}}
+function encodeAnalystPayload(value){try{return encodeURIComponent(JSON.stringify(value||{}));}catch{return '';}}
+function decodeAnalystPayload(value){try{const out=JSON.parse(decodeURIComponent(String(value||'')));return out&&typeof out==='object'?out:null;}catch{return null;}}
+function analystGroundingPanel(a){
+ const result=a?.result||{columns:[],rows:[]};const m=analystModel(result);const hasRows=Boolean(m.rows.length);const hasSql=Boolean(a?.sql);
+ const status=hasRows&&hasSql?'Fully grounded':hasRows?'Grounded result':'Data limitation';
+ const metrics=m.numeric.slice(0,6).map(analystLabel);const dimensions=m.dimensions.slice(0,6).map(analystLabel);
+ const intents=(a?.intents||[]).map(x=>String(x).replaceAll('_',' '));
+ const cross=(a?.intents||[]).includes('cross_domain');
+ return `<details class="grounding-panel"><summary><span><strong>${e(status)}</strong><small>${m.rows.length} governed row${m.rows.length===1?'':'s'} · ${e(a?.semanticDomain||'governed semantic layer')}</small></span><span class="grounding-toggle">Why this answer?</span></summary><div class="grounding-grid"><div><span>Semantic view</span><strong>${e(a?.semanticView||'—')}</strong></div><div><span>Intent${intents.length===1?'':'s'}</span><strong>${e(intents.join(' · ')||'General analysis')}</strong></div><div><span>Metrics used</span><strong>${e(metrics.join(', ')||'Derived by Cortex')}</strong></div><div><span>Dimensions used</span><strong>${e(dimensions.join(', ')||'Aggregate result')}</strong></div></div>${cross?'<p class="grounding-note">Cross-domain answer: Nova Mobility operational evidence is connected to external Marketplace trade/weather context. The two evidence types remain explicitly separated.</p>':''}<p class="grounding-note">The generated SQL remains available in the audit trail below. OntoTrail does not infer facts outside the governed result set.</p></details>`;
+}
+function firstResultValue(result,patterns){
+ const cols=result?.columns||[];const col=cols.find(c=>patterns.some(p=>p.test(String(c).toUpperCase())));if(!col)return '';return String(result?.rows?.find(r=>r[col]!==null&&r[col]!==undefined&&String(r[col]).trim())?.[col]||'').trim();
+}
+function buildInvestigateQuestion(question,a){
+ const result=a?.result||{columns:[],rows:[]};const nova=a?.semanticDomain==='nova-operations';
+ const supplier=firstResultValue(result,[/SUPPLIER_NAME/,/VENDOR_NAME/]);
+ const material=firstResultValue(result,[/MATERIAL_NAME/,/COMPONENT/,/PART_NAME/]);
+ const origin=firstResultValue(result,[/ORIGIN_COUNTRY/,/^COUNTRY$/]);
+ const plant=firstResultValue(result,[/PLANT_NAME/]);
+ if(nova){
+  if(supplier)return `For ${supplier}, trace the exposed materials, purchase orders, plants and inventory cover, then explain the linked origin-country trade dependency and current weather context where available.`;
+  if(material)return `For ${material}, trace the supplying vendors, affected purchase orders and plants, then connect the exposure to origin-country transport dependency and weather context where available.`;
+  if(plant)return `For ${plant}, identify the suppliers and materials driving operational risk, then connect those exposures to external country, transport and weather signals.`;
+  return 'Connect the highest Nova Mobility operational exposures in this result to their origin-country trade dependency, transport context and weather signals. Show the supplier, material, PO and plant paths that matter most.';
+ }
+ if(origin)return `For ${origin}, trace the highest-value commodity and transport dependencies, then identify any Nova Mobility suppliers, materials, purchase orders or plants linked to that origin and explain the operational exposure.`;
+ return `Investigate the leading external exposure in this result and connect it to Nova Mobility suppliers, materials, purchase orders and plants where a Marketplace match exists. Keep external trade/weather context separate from internal operational evidence.`;
+}
+function buildScenarioSeed(question,a,narrative){
+ const result=a?.result||{columns:[],rows:[]};const nova=a?.semanticDomain==='nova-operations';
+ const supplier=firstResultValue(result,[/SUPPLIER_NAME/,/VENDOR_NAME/]);
+ const origin=firstResultValue(result,[/ORIGIN_COUNTRY/,/^COUNTRY$/]);
+ const material=firstResultValue(result,[/MATERIAL_NAME/,/COMPONENT/,/PART_NAME/]);
+ let title='AI-generated disruption scenario',assumption='Apply a transparent stress assumption to the leading exposure and compare the resulting risk before taking action.',scenarioQuestion='';
+ if(nova&&supplier){title=`7-day delay stress · ${supplier}`;assumption=`Assume a 7-day delay to open supply from ${supplier}; evaluate affected materials, purchase orders, plants and inventory cover.`;scenarioQuestion=`Assume ${supplier} is delayed by 7 days. Which Nova Mobility materials, purchase orders and plants are most exposed, how does inventory cover change the priority, and what external origin-country weather or transport context should be monitored?`;}
+ else if(nova&&material){title=`Material continuity stress · ${material}`;assumption=`Stress inbound availability for ${material} and prioritize low-cover, high-value operational exposure.`;scenarioQuestion=`Stress inbound availability for ${material}. Which suppliers, purchase orders and plants are most exposed, and what mitigation options should be evaluated using the current inventory and external Marketplace context?`;}
+ else if(/sea|maritime|ocean/i.test(question)){title='15% sea-capacity stress';assumption='Apply a 15% stress to sea-linked exposure while keeping the governed baseline unchanged.';scenarioQuestion='If sea-linked exposure in this result faced a 15% capacity stress, which origins and commodities would contribute the largest exposure envelope, and what alternate sourcing or routing options should be evaluated?';}
+ else if(/weather/i.test(question)){title='Weather escalation stress';assumption='Prioritize covered exposure currently linked to elevated weather signals; do not infer risk for uncovered geographies.';scenarioQuestion='Escalate the currently covered medium/high weather-risk exposure in this result. Which origins, commodities and transport dependencies should be prioritized, and what operational mitigations should be evaluated?';}
+ else if(origin){title=`10% origin disruption · ${origin}`;assumption=`Apply a 10% disruption envelope to the governed exposure linked to ${origin} before substitution.`;scenarioQuestion=`For ${origin}, analyze a 10% disruption to the governed exposure in this result. Which commodities and transport dependencies drive the impact, and what mitigation options should be evaluated?`;}
+ else{scenarioQuestion=`Create a transparent stress test from this governed finding: ${String(question).slice(0,220)}. Identify the exposure driver, define a simple disruption assumption, quantify the affected governed metrics, and list mitigation options without presenting the scenario as a forecast.`;}
+ const scratch=document.createElement('div');scratch.innerHTML=narrative||'';const summary=(scratch.textContent||'').trim().slice(0,420);
+ return {title,assumption,question:scenarioQuestion,summary,sourceQuestion:question,domain:nova?'Nova Mobility operations':'Marketplace trade risk',createdAt:new Date().toISOString()};
+}
+function openScenarioFromPayload(value){
+ const seed=decodeAnalystPayload(value);if(!seed)return toast('Scenario context could not be restored.');
+ ui.aiScenario=seed;navigate('scenarios');toast('AI scenario seed added to Scenario Lab.');
+}
+function decisionBriefDialog(payload){
+ const data=decodeAnalystPayload(payload)||payload;if(!data)return;
+ const seed=data.seed||data;const meta=data.meta||{};
+ openDetail(`<div class="dialog-head"><div><span class="eyebrow">AI DECISION BRIEF</span><h2 id="detail-title">${e(seed.title||'Decision brief')}</h2><p>Governed evidence → implication → owned mitigation.</p></div><button class="icon-button" data-close="detail-dialog" aria-label="Close">${icon('close')}</button></div><div class="detail-body decision-brief-dialog"><section><span class="eyebrow">EVIDENCE</span><p>${e(seed.problem||'Governed analytical evidence from the current answer.')}</p></section><section><span class="eyebrow">RECOMMENDED ACTION</span><h3>${e(seed.action||'Review the evidence and assign a mitigation action.')}</h3><p><strong>Suggested owner:</strong> ${e(seed.owner||'Trade Risk Lead')} · <strong>Priority:</strong> ${e(seed.priority||'High')}</p></section><section><span class="eyebrow">GROUNDING</span><p>${e(meta.semanticView||'Governed semantic view')} · ${e((meta.intents||[]).join(' · ')||'governed analysis')} · ${Number(meta.rows||0)} result rows</p></section><div class="form-actions"><button class="secondary" data-close="detail-dialog">Close</button><button class="primary" data-decision-brief-create="${e(encodeDecisionSeed(seed))}">${icon('check')}Create decision</button></div></div>`);
+}
+
 function restoreDecisionInsightButtons(root){
  root.querySelectorAll('[data-decision-insight]').forEach(btn=>{
   const seed=decodeDecisionSeed(btn.dataset.decisionSeed);
@@ -652,9 +705,13 @@ async function ask(q){
   const decisionSeed=rec?{title:rec.title,problem:block.querySelector('.user-question')?.textContent?narrative.replace(/<[^>]+>/g,''):'',action:rec.action,owner:rec.owner,priority:'High',status:'Assigned',expectedImpact:rec.expectedImpact,source:'Cortex Analyst'}:null;
   if(decisionSeed)decisionInsights.set(rid,decisionSeed);
   const recHtml=rec&&(wantsRecommendation||/EXPOSURE|RISK|DELAY|SHORTAGE/i.test(question))?`<section class="recommendation-card"><span class="eyebrow">RECOMMENDED NEXT MOVE</span><h4>${e(rec.title)}</h4><p>${e(rec.action)}</p><div><span>Suggested owner</span><strong>${e(rec.owner)}</strong></div></section>`:'';
-  const decisionButton=hasRows&&decisionSeed?`<div class="analyst-actions"><button class="secondary small" data-decision-insight="${e(rid)}" data-decision-seed="${e(encodeDecisionSeed(decisionSeed))}">${icon('check')}Create decision from insight</button></div>`:'';
+  const investigateQuestion=buildInvestigateQuestion(question,a);
+  const scenarioSeed=buildScenarioSeed(question,a,narrative);
+  const decisionBrief=decisionSeed?encodeAnalystPayload({seed:decisionSeed,meta:{semanticView:a.semanticView,intents:a.intents||[],rows:a.result?.rows?.length||0}}):'';
+  const workflowActions=hasRows?`<div class="analyst-workflow-actions"><button class="secondary small" data-investigate-question="${e(investigateQuestion)}">${icon('network')}Investigate further</button><button class="secondary small" data-ai-scenario="${e(encodeAnalystPayload(scenarioSeed))}">${icon('sliders')}Create scenario</button>${decisionSeed?`<button class="secondary small" data-decision-brief="${e(decisionBrief)}">${icon('file')}Generate decision brief</button><button class="primary small" data-decision-insight="${e(rid)}" data-decision-seed="${e(encodeDecisionSeed(decisionSeed))}">${icon('check')}Create decision</button>`:''}</div>`:'';
+  const grounding=analystGroundingPanel(a);
   const interpretation=analysisQuestion!==question?`<p class="query-split-note">I answered the analytical part with Cortex Analyst, then generated the recommended action from the returned evidence.</p>`:'';
-  answerEl.innerHTML=`<div class="answer-heading">${icon('chat')}<strong>OntoTrail Intelligence</strong><span class="live-pill">LIVE · SNOWFLAKE CORTEX</span></div><p class="direct-answer" data-stream-text></p><div class="analyst-reveal" hidden>${interpretation}${recHtml}${resultHtml}${warning}${decisionButton}${sql}${suggestions}<small>Grounded in ${e(a.semanticView||'ONTOTRAIL_TRADE_RISK_ANALYST')} · Request ${e(a.requestId||'Snowflake')}</small></div><div class="assistant-response-actions"><button class="chat-action" type="button" data-chat-copy aria-label="Copy response" title="Copy response">Copy</button><button class="chat-action" type="button" data-chat-retry aria-label="Try again" title="Try again">Try again</button></div>`;
+  answerEl.innerHTML=`<div class="answer-heading">${icon('chat')}<strong>OntoTrail Intelligence</strong><span class="live-pill">LIVE · SNOWFLAKE CORTEX</span></div><p class="direct-answer" data-stream-text></p><div class="analyst-reveal" hidden>${interpretation}${recHtml}${workflowActions}${grounding}${resultHtml}${warning}${sql}${suggestions}<small>Grounded in ${e(a.semanticView||'ONTOTRAIL_TRADE_RISK_ANALYST')} · Request ${e(a.requestId||'Snowflake')}</small></div><div class="assistant-response-actions"><button class="chat-action" type="button" data-chat-copy aria-label="Copy response" title="Copy response">Copy</button><button class="chat-action" type="button" data-chat-retry aria-label="Try again" title="Try again">Try again</button></div>`;
   await revealNarrative(answerEl,narrative);
   const reveal=answerEl.querySelector('.analyst-reveal');if(reveal){reveal.hidden=false;requestAnimationFrame(()=>reveal.classList.add('visible'));}
  }catch(err){
@@ -682,7 +739,7 @@ const actions={
  'draft-baseline':()=>{draft=baseline(d);render();toast('Preview reset to zero delays. Apply to update the workspace.');},
  'draft-reset':()=>{draft=clone(scenario);render();toast('Unapplied changes discarded.');},
  'import':()=>$('#import-file').click(),
- 'clear-local':showClear,'confirm-clear':()=>{saved=[];activity=[];ui.compareId='';persist();closeDialog('detail-dialog');render();toast('Saved scenarios and local activity cleared.');}
+ 'clear-ai-scenario':()=>{ui.aiScenario=null;render();toast('AI scenario seed cleared.');},'clear-local':showClear,'confirm-clear':()=>{saved=[];activity=[];ui.compareId='';persist();closeDialog('detail-dialog');render();toast('Saved scenarios and local activity cleared.');}
 };
 document.addEventListener('click',event=>{const target=event.target.closest('button,a');if(!target)return;
  try{
@@ -704,7 +761,11 @@ document.addEventListener('click',event=>{const target=event.target.closest('but
   if(target.dataset.question){const sourceView=view;if(sourceView!=='analyst')ensureAnalystContextForView(sourceView);ask(target.dataset.question);return;}
   if(target.dataset.threadId){event.preventDefault();selectAnalystThread(target.dataset.threadId);return;}
   if(target.dataset.projectChat!==undefined){event.preventDefault();newAnalystChat(target.dataset.projectChat);return;}
-  if(target.dataset.decisionInsight){createDecisionFromInsight(target);return;}
+  if(target.dataset.investigateQuestion!==undefined){event.preventDefault();ask(target.dataset.investigateQuestion);return;}
+  if(target.dataset.aiScenario!==undefined){event.preventDefault();openScenarioFromPayload(target.dataset.aiScenario);return;}
+  if(target.dataset.decisionBrief!==undefined){event.preventDefault();decisionBriefDialog(target.dataset.decisionBrief);return;}
+  if(target.dataset.decisionBriefCreate!==undefined){event.preventDefault();const seed=decodeDecisionSeed(target.dataset.decisionBriefCreate);if(seed){closeDialog('detail-dialog');decisionDialog(seed);}return;}
+    if(target.dataset.decisionInsight){createDecisionFromInsight(target);return;}
   if(target.dataset.decisionStatus){const item=decisions.find(d=>d.id===target.dataset.decisionStatus);if(item){addDecisionActivity(item,target.dataset.nextStatus,`Status changed to ${target.dataset.nextStatus}.`);persistDecisions();void sendDecisionNotification(item);render();toast(`Decision ${item.id} moved to ${item.status}.`);}return;}
   if(target.dataset.decisionView){const item=decisions.find(d=>d.id===target.dataset.decisionView);if(item)decisionDetail(item);return;}
   if(target.dataset.decisionNotify){const item=decisions.find(d=>d.id===target.dataset.decisionNotify);if(item){void sendDecisionNotification(item).then(r=>toast(r.sent?'Owner notified by email.':'Decision saved; email provider is not configured yet.'));}return;}
