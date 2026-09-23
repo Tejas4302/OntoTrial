@@ -194,6 +194,179 @@ export default async function handler(req,res){
   const previousPlan=previousResult?.queryPlan&&typeof previousResult.queryPlan==='object'?previousResult.queryPlan:null;
   const previousIntents=Array.isArray(previousResult?.intents)?previousResult.intents.slice(0,8):[];
   const hasFollowupContext=Boolean(previousQuestion||previousAnswer||previousRows.length||previousPlan);
+  const aiModel=process.env.SNOWFLAKE_CORTEX_MODEL||'openai-gpt-5';
+  let aiPlan=null;
+  let aiPlannerWarning='';
+  try{
+    aiPlan=await aiPlanQuestion(base,pat,aiModel,{
+      question,
+      previous_question:previousQuestion||null,
+      previous_answer:previousAnswer||null,
+      previous_result_columns:previousColumns,
+      previous_intents:previousIntents,
+      previous_rows_available:previousRows.length>0
+    });
+  }catch(err){
+    aiPlannerWarning=err&&err.message?err.message:'AI planner unavailable.';
+  }
+
+  if(aiPlan){
+    try{
+      if(aiPlan.request_type==='needs_context'){
+        const synthesis=await aiSynthesize(base,pat,aiModel,{
+          current_question:question,
+          orchestration_plan:aiPlan,
+          previous_question:previousQuestion||null,
+          previous_answer:previousAnswer||null,
+          mapping:null,
+          previous_governed_evidence:compactAiResult(previousResult&&previousResult.result||{}),
+          current_governed_evidence:{columns:[],rows:[]}
+        });
+        return send(res,200,{
+          source:'snowflake-ai-orchestrated',
+          requestId:'ai-needs-context',
+          semanticView:'',
+          semanticDomain:'conversation',
+          intents:['needs_context'],
+          datasetCoverage:{dimensions:0,metrics:0},
+          warehouse,
+          text:synthesis.combined_answer,
+          sql:'',
+          suggestions:[],
+          result:null,
+          queryPlan:aiPlan,
+          orchestrationPlan:aiPlan,
+          aiOrchestrated:true,
+          needsContext:true,
+          fallbackUsed:false,
+          followupContextUsed:false,
+          executionWarning:''
+        });
+      }
+
+      if(aiPlan.request_type==='cross_domain'&&aiPlan.target_domain==='nova'&&previousRows.length){
+        const mapping=selectAiMapping(aiPlan.mapping_keys,previousColumns,previousRows);
+        if(!mapping){
+          const synthesis=await aiSynthesize(base,pat,aiModel,{
+            current_question:question,
+            orchestration_plan:aiPlan,
+            previous_question:previousQuestion||null,
+            previous_answer:previousAnswer||null,
+            mapping:null,
+            previous_governed_evidence:compactAiResult(previousResult&&previousResult.result||{}),
+            current_governed_evidence:{columns:[],rows:[]}
+          });
+          return send(res,200,{
+            source:'snowflake-ai-orchestrated',
+            requestId:'ai-cross-domain-no-mapping',
+            semanticView:novaSemanticView,
+            semanticDomain:'nova-operations',
+            intents:['cross_domain'],
+            datasetCoverage:{dimensions:DATASET_DOMAINS.nova.dimensions.length,metrics:DATASET_DOMAINS.nova.metrics.length},
+            warehouse,
+            text:synthesis.combined_answer,
+            sql:'',
+            suggestions:[],
+            result:null,
+            queryPlan:aiPlan,
+            orchestrationPlan:aiPlan,
+            aiOrchestrated:true,
+            needsMapping:true,
+            fallbackUsed:false,
+            followupContextUsed:true,
+            executionWarning:''
+          });
+        }
+        const mappedSql=buildAiNovaMappingQuery(novaSemanticView,mapping);
+        const mappedResult=await executeSql(base,pat,warehouse,mappedSql);
+        const synthesis=await aiSynthesize(base,pat,aiModel,{
+          current_question:question,
+          orchestration_plan:aiPlan,
+          previous_question:previousQuestion||null,
+          previous_answer:previousAnswer||null,
+          mapping:{key:mapping.key,source_column:mapping.sourceColumn,target_dimension:mapping.target,values:mapping.values},
+          previous_governed_evidence:compactAiResult(previousResult&&previousResult.result||{}),
+          current_governed_evidence:compactAiResult(mappedResult)
+        });
+        return send(res,200,{
+          source:'snowflake-ai-orchestrated',
+          requestId:'ai-cross-domain-'+String(mapping.key).toLowerCase(),
+          semanticView:novaSemanticView,
+          semanticDomain:'nova-operations',
+          intents:['cross_domain'],
+          datasetCoverage:{dimensions:DATASET_DOMAINS.nova.dimensions.length,metrics:DATASET_DOMAINS.nova.metrics.length},
+          warehouse,
+          text:synthesis.combined_answer,
+          sql:mappedSql,
+          suggestions:[],
+          result:mappedResult,
+          queryPlan:Object.assign({},aiPlan,{mapping_used:mapping.key}),
+          orchestrationPlan:aiPlan,
+          aiOrchestrated:true,
+          mappingUsed:mapping.key,
+          fallbackUsed:false,
+          followupContextUsed:true,
+          executionWarning:''
+        });
+      }
+
+      const aiDomain=aiPlan.source_domain==='nova'?'nova':'trade';
+      const aiSemanticView=aiDomain==='nova'?novaSemanticView:tradeSemanticView;
+      const aiProfile=DATASET_DOMAINS[aiDomain];
+      const aiPrompt=[
+        aiPlan.semantic_query||question,
+        '',
+        'ONTO TRAIL AI ORCHESTRATION',
+        'Original user question: '+question,
+        'Answer goal: '+(aiPlan.answer_goal||'Answer the user from governed evidence.'),
+        aiPlan.required_dimensions&&aiPlan.required_dimensions.length?'Requested governed dimensions: '+aiPlan.required_dimensions.join(', '):'',
+        aiPlan.required_metrics&&aiPlan.required_metrics.length?'Requested governed metrics: '+aiPlan.required_metrics.join(', '):'',
+        aiPlan.caution?'Caution: '+aiPlan.caution:'',
+        buildDatasetGuidance(question,aiDomain,classifyQuestion(question).intents)
+      ].filter(Boolean).join('\n');
+      const analyst=await fetchWithTimeout(base+'/api/v2/cortex/analyst/message',{
+        method:'POST',
+        headers:snowHeaders(pat),
+        body:JSON.stringify({messages:[{role:'user',content:[{type:'text',text:aiPrompt}]}],semantic_view:aiSemanticView,stream:false})
+      },50000);
+      const analystBody=await analyst.json().catch(()=>({}));
+      if(!analyst.ok)throw Error(analystBody.message||analystBody.error||('Snowflake Cortex Analyst returned '+analyst.status+'.'));
+      const parsedAi=normalizeAnalyst(analystBody);
+      const aiSql=safeSelect(parsedAi.sql);
+      const aiResult=aiSql?await executeSql(base,pat,warehouse,aiSql):null;
+      const synthesis=await aiSynthesize(base,pat,aiModel,{
+        current_question:question,
+        orchestration_plan:aiPlan,
+        previous_question:previousQuestion||null,
+        previous_answer:previousAnswer||null,
+        mapping:null,
+        previous_governed_evidence:compactAiResult(previousResult&&previousResult.result||{}),
+        current_governed_evidence:compactAiResult(aiResult||{})
+      });
+      return send(res,200,{
+        source:'snowflake-ai-orchestrated',
+        requestId:analystBody.request_id||analyst.headers.get('x-snowflake-request-id')||'ai-orchestrated',
+        semanticView:aiSemanticView,
+        semanticDomain:aiDomain==='nova'?'nova-operations':'india-trade-risk',
+        intents:[aiPlan.request_type],
+        datasetCoverage:{dimensions:aiProfile.dimensions.length,metrics:aiProfile.metrics.length},
+        warehouse,
+        text:synthesis.combined_answer,
+        sql:aiSql||'',
+        suggestions:parsedAi.suggestions||[],
+        result:aiResult,
+        queryPlan:aiPlan,
+        orchestrationPlan:aiPlan,
+        aiOrchestrated:true,
+        fallbackUsed:false,
+        followupContextUsed:hasFollowupContext,
+        executionWarning:''
+      });
+    }catch(err){
+      aiPlannerWarning='AI orchestration fallback: '+(err&&err.message?err.message:'unknown orchestration error');
+    }
+  }
+
   const plan=resolveQuestionPlan(question,{
     previousQuestion,
     previousPlan,
