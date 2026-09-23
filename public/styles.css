@@ -1085,3 +1085,17 @@ body.analyst-mode .analyst-page-form::before{z-index:-1}
   .auth-story h1{font-size:36px}
   .auth-card h1{font-size:32px}
 }
+
+
+/* v3.0.3 — public-page scroll safety */
+body.entry-mode{
+  overflow-y:auto!important;
+  overflow-x:hidden!important;
+  min-height:100%;
+}
+body.entry-mode #entry-root{min-height:100vh}
+body.entry-mode .auth-layout,
+body.entry-mode .landing,
+body.entry-mode .platform-admin{
+  overflow:visible;
+}
