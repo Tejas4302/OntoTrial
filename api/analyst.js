@@ -298,7 +298,13 @@ LIMIT 25`;
           'Which plants are exposed to these matched records?'
         ],
         result,
-        queryPlan:{...plan,type:'operational_impact',mappingKeys},
+        queryPlan:{
+          ...plan,
+          type:'operational_impact',
+          mappingKeys,
+          contextColumns:previousColumns.slice(0,16),
+          contextQuestion:previousQuestion.slice(0,500)
+        },
         fallbackUsed:false,
         followupContextUsed:true,
         executionWarning:''
