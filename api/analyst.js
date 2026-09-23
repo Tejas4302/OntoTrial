@@ -100,13 +100,57 @@ export default async function handler(req,res){
       requestId:body.request_id||analyst.headers.get('x-snowflake-request-id')||''
     });
 
-    const parsed=normalizeAnalyst(body);
+    let parsed=normalizeAnalyst(body);
     let result=null;
     let executionWarning='';
-    const sql=safeSelect(parsed.sql);
+    let fallbackUsed=false;
+    let sql=safeSelect(parsed.sql);
     if(sql){
       try{result=await executeSql(base,pat,warehouse,sql);}
       catch(err){executionWarning=err.message||'The generated SQL could not be executed.';}
+    }
+
+    const needsWeatherFallback=domain==='nova'&&
+      intents.some(x=>['cross_domain','nova_weather_risk'].includes(x.id))&&
+      (!result?.rows?.length);
+    if(needsWeatherFallback){
+      const fallbackQuestion=[
+        question,
+        '',
+        'ONTO TRAIL FALLBACK RULE',
+        'The first query returned no rows. Do NOT filter the Nova dataset to only MEDIUM/HIGH weather risk.',
+        'Return all relevant Nova suppliers so the application can distinguish elevated exposure from zero exposure or unavailable weather coverage.',
+        'Include SUPPLIER_NAME, ORIGIN_COUNTRY, SUPPLIER_TIER, SUPPLIER_CRITICALITY, WEATHER_RISK_LEVEL and MARKETPLACE_MATCH_STATUS where available.',
+        'Include TOTAL_PO_VALUE_USD, WEATHER_LINKED_PO_VALUE_USD, MINIMUM_DAYS_OF_COVER, DELAYED_PO_VALUE_USD and AVERAGE_MARKET_SEA_DEPENDENCY_PCT where available.',
+        'If no supplier has elevated weather-linked PO value, return suppliers with zero values rather than an empty result.',
+        datasetGuidance
+      ].join('\n');
+      try{
+        const retry=await fetchWithTimeout(`${base}/api/v2/cortex/analyst/message`,{
+          method:'POST',
+          headers:snowHeaders(pat),
+          body:JSON.stringify({
+            messages:[{role:'user',content:[{type:'text',text:fallbackQuestion}]}],
+            semantic_view:semanticView,
+            stream:false
+          })
+        },50000);
+        const retryBody=await retry.json().catch(()=>({}));
+        if(retry.ok){
+          const retryParsed=normalizeAnalyst(retryBody);
+          const retrySql=safeSelect(retryParsed.sql);
+          if(retrySql){
+            const retryResult=await executeSql(base,pat,warehouse,retrySql);
+            if(retryResult?.rows?.length){
+              parsed=retryParsed;
+              sql=retrySql;
+              result=retryResult;
+              fallbackUsed=true;
+              executionWarning='';
+            }
+          }
+        }
+      }catch{}
     }
 
     return send(res,200,{
@@ -121,6 +165,7 @@ export default async function handler(req,res){
       sql:sql||'',
       suggestions:parsed.suggestions,
       result,
+      fallbackUsed,
       executionWarning
     });
   }catch(err){
