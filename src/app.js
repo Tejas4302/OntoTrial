@@ -83,8 +83,9 @@ function analystModel(result){
  const metric=numeric.find(c=>/EXPOSURE|IMPORT_VALUE|EXPORT_VALUE|TRADE_VALUE|PO_VALUE|REVENUE|COST|AMOUNT/.test(String(c).toUpperCase()))||numeric.find(c=>/PCT|PERCENT|RATE|DAYS/.test(String(c).toUpperCase()))||numeric.find(c=>/COUNT|QUANTITY|UNITS/.test(String(c).toUpperCase()))||numeric[0];
  const dimension=dimensions.find(c=>!/SCENARIO/.test(String(c).toUpperCase()))||dimensions[0];return {columns,rows,numeric,dimensions,metric,dimension};
 }
-function analystNarrative(question,result,cortexText=''){
- const m=analystModel(result);if(!m.rows.length)return 'No matching records were returned for this question.';
+function analystNarrative(question,result,cortexText='',meta={}){
+ if(meta?.needsContext)return e(cortexText||'I need the prior finding you want me to connect to our operations. Ask this as a follow-up in the same chat.');
+ const m=analystModel(result);if(!m.rows.length)return cortexText?e(cortexText):'No matching records were returned for this question.';
  const q=String(question||'');const asksLowest=/\b(lowest|minimum|min\.?|smallest|least|bottom)\b/i.test(q);const asksHighest=/\b(highest|maximum|max\.?|largest|most|top)\b/i.test(q);
  const rowIntent=/\b(rest of world|\brow\b)\b/i.test(q);
  const governanceImportIntent=/\bindia\b/i.test(q)&&/\b2026\b/.test(q)&&(/\btotal import value\b/i.test(q)||/\btotal import exposure\b/i.test(q)||/\btotal inbound trade value\b/i.test(q));
@@ -94,18 +95,20 @@ function analystNarrative(question,result,cortexText=''){
   const value=importCol?m.rows.map(r=>analystNumber(r[importCol])).filter(v=>v!==null).reduce((a,b)=>a+b,0):null;
   if(value!==null)return `India's governed 2026 import value is <strong>${analystFormat(importCol||'IMPORT_VALUE_USD',value)}</strong>. Planning, Procurement and Logistics phrasing all resolve to the canonical <strong>import_value_usd</strong> metric with <strong>TRADE_DIRECTION = IMPORT</strong> and <strong>TRADE_YEAR = 2026</strong>.`;
  }
- const seaDependencyRankIntent=/\bmost\s+dependent\s+on\s+sea\b/i.test(q)||/\bhighest\s+sea\s+dependenc/i.test(q)||/\bdependent\s+on\s+sea\s+transport\b/i.test(q);
- if(seaDependencyRankIntent){
+ const queryPlan=meta?.queryPlan||{};
+ if(queryPlan.type==='transport_dependency_ranking'){
   const cols=m.columns.map(c=>String(c));const find=(patterns)=>cols.find(c=>{const u=c.toUpperCase();return patterns.some(p=>p.test(u));});
+  const metricCol=find([new RegExp(queryPlan.metric||'DEPENDENCY_PCT','i')]);
+  const valueCol=find([new RegExp(queryPlan.valueMetric||'IMPORT_VALUE_USD','i'),/TOTAL_NOMINAL_TRADE_VALUE_USD/]);
   const headingCol=find([/COMMODITY_HEADING/,/^HEADING$/]);
   const chapterCol=find([/COMMODITY_CHAPTER/,/^CHAPTER$/]);
   const hs4Col=find([/HS4_CODE/,/^HS4$/,/HS4_STR/]);
-  const dim=headingCol||chapterCol||find([/ORIGIN_COUNTRY/])||hs4Col||m.dimension;
-  const sea=find([/SEA_DEPENDENCY_PCT/]);
-  const valueCol=find([/^IMPORT_VALUE_USD$/, /TOTAL_NOMINAL_TRADE_VALUE_USD/]);
-  if(dim&&sea){
-   const rows=[...m.rows].filter(r=>analystNumber(r[sea])!==null).sort((a,b)=>{
-    const d=analystNumber(b[sea])-analystNumber(a[sea]);
+  const originCol=find([/ORIGIN_COUNTRY/,/ORIGIN_ISO/]);
+  const dim=queryPlan.grain==='origin'?(originCol||m.dimension):(headingCol||chapterCol||hs4Col||m.dimension);
+  if(dim&&metricCol){
+   const rows=[...m.rows].filter(r=>analystNumber(r[metricCol])!==null).sort((a,b)=>{
+    const av=analystNumber(a[metricCol]),bv=analystNumber(b[metricCol]);
+    const d=queryPlan.order==='asc'?av-bv:bv-av;
     if(d!==0)return d;
     return (analystNumber(b[valueCol])||0)-(analystNumber(a[valueCol])||0);
    });
@@ -114,15 +117,18 @@ function analystNarrative(question,result,cortexText=''){
       const rawLabel=String(r[dim]??'').trim();
       const friendly=/COMMODITY|HEADING|CHAPTER/i.test(String(dim))?analystCommodityLabel(rawLabel):rawLabel;
       const code=hs4Col&&String(r[hs4Col]??'').trim();
-      const label=(friendly||code||'Import category')+(code&&friendly&&code!==friendly?` <span class="muted-inline">(HS4 ${e(code)})</span>`:'');
-      const bits=[`${analystFormat(sea,r[sea])} sea dependency`];
-      if(valueCol&&analystNumber(r[valueCol])!==null)bits.push(`${analystFormat(valueCol,r[valueCol])} import value`);
+      const label=(friendly||code||'Trade category')+(code&&friendly&&code!==friendly?` <span class="muted-inline">(HS4 ${e(code)})</span>`:'');
+      const bits=[`${analystFormat(metricCol,r[metricCol])} ${e(queryPlan.mode||'transport')} dependency`];
+      if(valueCol&&analystNumber(r[valueCol])!==null)bits.push(`${analystFormat(valueCol,r[valueCol])} ${queryPlan.direction==='EXPORT'?'export':'import'} value`);
       return `<strong>${label}</strong> (${bits.join(' · ')})`;
     }).join(', ');
-    return `The most sea-dependent India imports in the returned 2026 data are ${leaders}. This ranking is based on <strong>SEA_DEPENDENCY_PCT</strong>—the share of import value carried by sea—not on absolute sea trade value.`;
+    const qualifier=queryPlan.order==='asc'?'least':'most';
+    const scope=queryPlan.direction==='EXPORT'?'exports':'imports';
+    const year=queryPlan.year?` in ${queryPlan.year}`:'';
+    return `The ${qualifier} ${e(queryPlan.mode||'transport')}-dependent India ${scope}${year} in the returned governed data are ${leaders}. This ranking is based on <strong>${e(queryPlan.metric||metricCol)}</strong>, while trade value is shown only as exposure context.`;
    }
   }
-  return 'The returned result does not contain <strong>SEA_DEPENDENCY_PCT</strong>, so OntoTrail cannot correctly rank which imports are most dependent on sea transport from this result.';
+  return `The returned governed result does not contain the ${e(queryPlan.metric||'transport dependency')} metric needed for this ranking.`;
  }
  const governanceSeaIntent=/\bmore than\s+70%\s+sea dependent\b/i.test(q)||(/\bsea dependent\b/i.test(q)&&/\bindia imports\b/i.test(q));
  if(governanceSeaIntent){
@@ -339,8 +345,7 @@ function analystNarrative(question,result,cortexText=''){
    }
   }
  }
- const operationalSeaFollowup=/\b(our\s+operations?|operations?|operationally|affect\s+us|impact\s+us)\b/i.test(q)&&m.columns.some(c=>/AVERAGE_MARKET_SEA_DEPENDENCY_PCT/i.test(String(c)));
- if(operationalSeaFollowup&&m.rows.length){
+ if(queryPlan.type==='operational_impact'&&m.rows.length){
   const cols=m.columns.map(c=>String(c));const find=(patterns)=>cols.find(c=>{const u=c.toUpperCase();return patterns.some(p=>p.test(u));});
   const supplierCol=find([/SUPPLIER_NAME/]),materialCol=find([/MATERIAL_NAME/]),originCol=find([/ORIGIN_COUNTRY/]),plantCol=find([/PLANT_NAME/]);
   const seaCol=find([/AVERAGE_MARKET_SEA_DEPENDENCY_PCT/]),poValueCol=find([/TOTAL_PO_VALUE_USD/]),coverCol=find([/MINIMUM_DAYS_OF_COVER/]),delayedCol=find([/DELAYED_PO_VALUE_USD/]),riskCol=find([/OPERATIONAL_RISK_LEVEL/]);
@@ -358,7 +363,7 @@ function analystNarrative(question,result,cortexText=''){
     if(plantCol&&r[plantCol])bits.push(e(r[plantCol]));
     return `<strong>${label}</strong> (${bits.join(' · ')})`;
   }).join(', ');
-  return `The India sea-dependency signal matters to Nova where it overlaps with our Marketplace-matched materials and suppliers. The strongest matched exposures are ${leaders}. Treat <strong>market sea dependency</strong> as external TradePrism context, not Nova's actual shipment-mode share; prioritize items where high external sea dependency overlaps with large PO exposure, low inventory cover or delayed supply.`;
+  return `The prior external ${e(queryPlan.mode||'transport')}-dependency signal matters to Nova where it overlaps with Marketplace-matched materials and suppliers. The strongest matched exposures are ${leaders}. External market dependency is contextual intelligence, not Nova's actual shipment-mode share; prioritize overlaps with large PO exposure, low inventory cover, delayed supply or elevated operational risk.`;
  }
  const crossDomainWeatherIntent=/\b(nova|supplier|vendor|material|component|plant|po|purchase order)\b/i.test(q)&&/\b(weather|external|marketplace|country risk|sea dependency)\b/i.test(q);
  if(crossDomainWeatherIntent&&m.rows.length){
@@ -803,6 +808,7 @@ async function ask(q){
       semanticDomain:a.semanticDomain||'',
       semanticView:a.semanticView||'',
       intents:(a.intents||[]).slice(0,8),
+      queryPlan:a.queryPlan||null,
       result:a.result?{columns:(a.result.columns||[]).slice(0,16),rows:(a.result.rows||[]).slice(0,12)}:null
     };
     block.dataset.analystContext=encodeURIComponent(JSON.stringify(compactContext));
@@ -811,7 +817,7 @@ async function ask(q){
   const sql=a.sql?`<details class="analyst-sql"><summary>Audit trail · View generated SQL</summary><pre>${e(a.sql)}</pre></details>`:'';
   const warning=(a.executionWarning||a.fallbackUsed)?`<p class="analyst-warning">${e(a.executionWarning||'OntoTrail broadened the first zero-row cross-domain query so missing direct mappings can be distinguished from a true data failure.')}</p>`:'';
   const suggestions=a.suggestions?.length?`<div class="analyst-suggestions"><span>Explore next</span>${a.suggestions.map(s=>`<button type="button" data-question="${e(s)}">${e(s)}</button>`).join('')}</div>`:'';
-  const narrative=analystNarrative(question,a.result||{columns:[],rows:[]},a.text||'');
+  const narrative=analystNarrative(question,a.result||{columns:[],rows:[]},a.text||'',a);
   const rec=hasRows?recommendationFor(question,a.result):null;
   const decisionSeed=rec?{title:rec.title,problem:block.querySelector('.user-question')?.textContent?narrative.replace(/<[^>]+>/g,''):'',action:rec.action,owner:rec.owner,priority:'High',status:'Assigned',expectedImpact:rec.expectedImpact,source:'Cortex Analyst'}:null;
   if(decisionSeed)decisionInsights.set(rid,decisionSeed);
@@ -820,9 +826,9 @@ async function ask(q){
   const scenarioSeed=buildScenarioSeed(question,a,narrative);
   const decisionBrief=decisionSeed?encodeAnalystPayload({seed:decisionSeed,meta:{semanticView:a.semanticView,intents:a.intents||[],rows:a.result?.rows?.length||0}}):'';
   const workflowActions=hasRows?`<div class="analyst-workflow-actions"><button class="secondary small" data-investigate-question="${e(investigateQuestion)}">${icon('network')}Investigate further</button><button class="secondary small" data-ai-scenario="${e(encodeAnalystPayload(scenarioSeed))}">${icon('sliders')}Create scenario</button>${decisionSeed?`<button class="secondary small" data-decision-brief="${e(decisionBrief)}">${icon('file')}Generate decision brief</button><button class="primary small" data-decision-insight="${e(rid)}" data-decision-seed="${e(encodeDecisionSeed(decisionSeed))}">${icon('check')}Create decision</button>`:''}</div>`:'';
-  const grounding=analystGroundingPanel(a);
+  const grounding=a.needsContext?'':analystGroundingPanel(a);
   const interpretation=analysisQuestion!==question?`<p class="query-split-note">I answered the analytical part with Cortex Analyst, then generated the recommended action from the returned evidence.</p>`:'';
-  answerEl.innerHTML=`<div class="answer-heading">${icon('chat')}<strong>OntoTrail Intelligence</strong><span class="live-pill">LIVE · SNOWFLAKE CORTEX</span></div><p class="direct-answer" data-stream-text></p><div class="analyst-reveal" hidden>${interpretation}${recHtml}${workflowActions}${grounding}${resultHtml}${warning}${sql}${suggestions}<small>Grounded in ${e(a.semanticView||'ONTOTRAIL_TRADE_RISK_ANALYST')} · Request ${e(a.requestId||'Snowflake')}</small></div><div class="assistant-response-actions"><button class="chat-action" type="button" data-chat-copy aria-label="Copy response" title="Copy response">Copy</button><button class="chat-action" type="button" data-chat-retry aria-label="Try again" title="Try again">Try again</button></div>`;
+  answerEl.innerHTML=`<div class="answer-heading">${icon('chat')}<strong>OntoTrail Intelligence</strong><span class="live-pill">LIVE · SNOWFLAKE CORTEX</span></div><p class="direct-answer" data-stream-text></p><div class="analyst-reveal" hidden>${interpretation}${recHtml}${workflowActions}${grounding}${resultHtml}${warning}${sql}${suggestions}<small>${a.needsContext?'Conversation context required':`Grounded in ${e(a.semanticView||'Snowflake governed semantic views')} · Request ${e(a.requestId||'Snowflake')}`}</small></div><div class="assistant-response-actions"><button class="chat-action" type="button" data-chat-copy aria-label="Copy response" title="Copy response">Copy</button><button class="chat-action" type="button" data-chat-retry aria-label="Try again" title="Try again">Try again</button></div>`;
   await revealNarrative(answerEl,narrative);
   const reveal=answerEl.querySelector('.analyst-reveal');if(reveal){reveal.hidden=false;requestAnimationFrame(()=>reveal.classList.add('visible'));}
  }catch(err){
