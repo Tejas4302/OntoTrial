@@ -239,3 +239,18 @@ test('context-dependent follow-up in a new chat asks for context',()=>{
   const p=resolveQuestionPlan('How will this affect us?',{});
   assert.equal(p.type,'needs_context');
 });
+
+
+test('weather operational follow-up preserves signal type',()=>{
+  const p=resolveQuestionPlan('How will this affect us?',{
+    previousQuestion:'Among countries with weather coverage, which have the highest import exposure and weather risk?',
+    previousPlan:{type:'semantic_analyst'},
+    previousIntents:['trade_exposure','weather_risk'],
+    previousColumns:['ORIGIN_COUNTRY','IMPORT_VALUE_USD','TRADE_WEIGHTED_WEATHER_RISK_SCORE','WEATHER_COVERAGE_PCT'],
+    hasRows:true
+  });
+  assert.equal(p.type,'operational_impact_followup');
+  assert.equal(p.domain,'nova');
+  assert.equal(p.signal,'weather');
+  assert.equal(p.mode,null);
+});
