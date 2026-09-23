@@ -231,7 +231,9 @@ test('operational impact follow-up uses conversation context rather than exact w
     const p=resolveQuestionPlan(q,{previousQuestion:'Rank India imports by sea dependency in 2026',previousPlan,hasRows:true});
     assert.equal(p.type,'operational_impact_followup',q);
     assert.equal(p.domain,'nova',q);
-    assert.equal(p.mode,'sea',q);
+    assert.equal(p.previousPlan,previousPlan,q);
+    assert.equal(Object.hasOwn(p,'signal'),false,q);
+    assert.equal(Object.hasOwn(p,'mode'),false,q);
   }
 });
 
