@@ -94,6 +94,26 @@ function analystNarrative(question,result,cortexText=''){
   const value=importCol?m.rows.map(r=>analystNumber(r[importCol])).filter(v=>v!==null).reduce((a,b)=>a+b,0):null;
   if(value!==null)return `India's governed 2026 import value is <strong>${analystFormat(importCol||'IMPORT_VALUE_USD',value)}</strong>. Planning, Procurement and Logistics phrasing all resolve to the canonical <strong>import_value_usd</strong> metric with <strong>TRADE_DIRECTION = IMPORT</strong> and <strong>TRADE_YEAR = 2026</strong>.`;
  }
+ const seaDependencyRankIntent=/\bmost\s+dependent\s+on\s+sea\b/i.test(q)||/\bhighest\s+sea\s+dependenc/i.test(q)||/\bdependent\s+on\s+sea\s+transport\b/i.test(q);
+ if(seaDependencyRankIntent){
+  const cols=m.columns.map(c=>String(c));const find=(patterns)=>cols.find(c=>{const u=c.toUpperCase();return patterns.some(p=>p.test(u));});
+  const dim=find([/COMMODITY_CHAPTER/,/COMMODITY_HEADING/,/ORIGIN_COUNTRY/,/HS4/])||m.dimension;
+  const sea=find([/SEA_DEPENDENCY_PCT/]);
+  const valueCol=find([/^IMPORT_VALUE_USD$/, /TOTAL_NOMINAL_TRADE_VALUE_USD/]);
+  if(dim&&sea){
+   const rows=[...m.rows].filter(r=>analystNumber(r[sea])!==null).sort((a,b)=>analystNumber(b[sea])-analystNumber(a[sea]));
+   if(rows.length){
+    const leaders=rows.slice(0,5).map(r=>{
+      const label=/COMMODITY/i.test(String(dim))?analystCommodityLabel(r[dim]):String(r[dim]??'');
+      const bits=[`${analystFormat(sea,r[sea])} sea dependency`];
+      if(valueCol&&analystNumber(r[valueCol])!==null)bits.push(`${analystFormat(valueCol,r[valueCol])} import value`);
+      return `<strong>${e(label)}</strong> (${bits.join(' · ')})`;
+    }).join(', ');
+    return `The most sea-dependent India imports in the returned 2026 data are ${leaders}. This ranking is based on <strong>SEA_DEPENDENCY_PCT</strong>—the share of import value carried by sea—not on absolute sea trade value.`;
+   }
+  }
+  return 'The returned result does not contain <strong>SEA_DEPENDENCY_PCT</strong>, so OntoTrail cannot correctly rank which imports are most dependent on sea transport from this result.';
+ }
  const governanceSeaIntent=/\bmore than\s+70%\s+sea dependent\b/i.test(q)||(/\bsea dependent\b/i.test(q)&&/\bindia imports\b/i.test(q));
  if(governanceSeaIntent){
   const cols=m.columns.map(c=>String(c));const find=(patterns)=>cols.find(c=>{const u=c.toUpperCase();return patterns.some(p=>p.test(u));});
