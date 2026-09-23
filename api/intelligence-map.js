@@ -56,6 +56,7 @@ export const DATASET_DOMAINS = Object.freeze({
     constraints: [
       'Nova operational records are synthetic hackathon data and must never be described as real company records.',
       'Marketplace trade/weather enrichment is external context, not Nova proprietary market data.',
+      'For cross-domain questions, connect supplier/material/PO/plant exposure to ORIGIN_COUNTRY, WEATHER_RISK_LEVEL, WEATHER_LINKED_PO_VALUE_USD and AVERAGE_MARKET_SEA_DEPENDENCY_PCT where available. Clearly label the Marketplace portion as external context.',
       'AVERAGE_MARKET_SEA_DEPENDENCY_PCT is external TradePrism context and is not Nova actual shipment-mode share.',
       'Use PO_ID for purchase-order questions, SUPPLIER_NAME for supplier questions and MATERIAL_NAME for component questions.',
       'Prefer semantic metrics over re-deriving formulas.'
@@ -82,6 +83,9 @@ const INTENTS = [
   {id:'supplier_risk', domain:'nova', re:/\b(suppliers?|vendors?|tier 1|tier 2)\b/i,
     dimensions:['SUPPLIER_NAME','SUPPLIER_TIER','SUPPLIER_CRITICALITY','ORIGIN_COUNTRY','OPERATIONAL_RISK_LEVEL'], metrics:['TOTAL_PO_VALUE_USD','DELAYED_PO_COUNT','DELAYED_PO_VALUE_USD','MINIMUM_DAYS_OF_COVER','HIGH_OPERATIONAL_RISK_PO_VALUE_USD','WEATHER_LINKED_PO_VALUE_USD'],
     guidance:'Assess supplier risk using exposure, delay status, inventory cover and external risk together; do not rank on PO value alone unless asked.'},
+  {id:'cross_domain', domain:'nova', re:/\b(nova|suppliers?|vendors?|materials?|components?|plants?|purchase[- ]orders?|pos?)\b.*\b(weather|trade|sea dependency|marketplace|external|country risk|origin risk)\b|\b(weather|trade|sea dependency|marketplace|external|country risk|origin risk)\b.*\b(nova|suppliers?|vendors?|materials?|components?|plants?|purchase[- ]orders?|pos?)\b/i,
+    dimensions:['SUPPLIER_NAME','MATERIAL_NAME','PLANT_NAME','ORIGIN_COUNTRY','WEATHER_RISK_LEVEL','MARKETPLACE_MATCH_STATUS'], metrics:['TOTAL_PO_VALUE_USD','WEATHER_LINKED_PO_VALUE_USD','AVERAGE_MARKET_SEA_DEPENDENCY_PCT','MINIMUM_DAYS_OF_COVER','DELAYED_PO_VALUE_USD'],
+    guidance:'Bridge internal Nova operational exposure with external Marketplace context. Start with the internal supplier/material/PO/plant exposure, then explain the linked origin-country trade dependency or weather signal. Keep internal operational facts and external context clearly distinguished.'},
   {id:'nova_weather_risk', domain:'nova', re:/\b(weather|storm|flood|external weather|weather-linked)\b/i,
     dimensions:['SUPPLIER_NAME','ORIGIN_COUNTRY','WEATHER_RISK_LEVEL','MATERIAL_NAME'], metrics:['WEATHER_LINKED_PO_VALUE_USD','TOTAL_PO_VALUE_USD','MINIMUM_DAYS_OF_COVER'],
     guidance:'For Nova questions, treat weather as external Marketplace context. Quantify weather-linked PO exposure and combine it with supplier/material and inventory evidence; do not infer weather risk where the enrichment is unavailable.'},
