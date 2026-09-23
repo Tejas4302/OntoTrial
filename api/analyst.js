@@ -84,6 +84,23 @@ export default async function handler(req,res){
     ? "Governed ROW rule: Rest of World/ROW is ORIGIN_ISO = 'ROW'. Filter that aggregate directly. Do not substitute a ranking of other countries. Only report weather for ROW when aggregate-row weather coverage exists."
     : "";
   const datasetGuidance=buildDatasetGuidance(classificationQuestion,domain,intents);
+  const seaDependencyRankIntent=domain==='trade'&&(
+    /\bmost\s+dependent\s+on\s+sea\b/i.test(question)||
+    /\bhighest\s+sea\s+dependenc/i.test(question)||
+    /\bsea[- ]dependent\b/i.test(question)||
+    /\bdependent\s+on\s+sea\s+transport\b/i.test(question)
+  );
+  const dependencyGuidance=seaDependencyRankIntent
+    ? [
+        'STRICT TRANSPORT DEPENDENCY RULE',
+        'The user is asking for dependency, not absolute sea trade value.',
+        'Rank the relevant India import commodity/origin rows by SEA_DEPENDENCY_PCT descending.',
+        'Do NOT rank by TOTAL_SEA_TRADE_VALUE_USD.',
+        'Return SEA_DEPENDENCY_PCT in the result and include IMPORT_VALUE_USD as secondary context when available.',
+        'Apply TRADE_DIRECTION = IMPORT and the requested TRADE_YEAR.',
+        'Use a business-readable commodity dimension such as COMMODITY_CHAPTER or COMMODITY_HEADING when the user asks which imports.'
+      ].join('\n')
+    : '';
   const conversationContext=hasFollowupContext
     ? [
         'ONTO TRAIL CONVERSATION CONTEXT',
@@ -96,6 +113,7 @@ export default async function handler(req,res){
   const governedQuestion=[
     question,
     conversationContext,
+    dependencyGuidance,
     "",
     "ONTO TRAIL GOVERNED DATASET INSTRUCTIONS",
     datasetGuidance,
@@ -127,6 +145,47 @@ export default async function handler(req,res){
     if(sql){
       try{result=await executeSql(base,pat,warehouse,sql);}
       catch(err){executionWarning=err.message||'The generated SQL could not be executed.';}
+    }
+
+    const resultColumns=(result?.columns||[]).map(c=>String(c).toUpperCase());
+    const needsSeaDependencyRetry=seaDependencyRankIntent&&result?.rows?.length&&!resultColumns.some(c=>c.includes('SEA_DEPENDENCY_PCT'));
+    if(needsSeaDependencyRetry){
+      const retryQuestion=[
+        question,
+        '',
+        'ONTO TRAIL TRANSPORT DEPENDENCY RETRY',
+        'The prior result did not return SEA_DEPENDENCY_PCT, so it cannot answer a dependency-ranking question correctly.',
+        'Return COMMODITY_CHAPTER or COMMODITY_HEADING, SEA_DEPENDENCY_PCT, and IMPORT_VALUE_USD for India imports in the requested year.',
+        'Order by SEA_DEPENDENCY_PCT descending. Do not order by TOTAL_SEA_TRADE_VALUE_USD.',
+        datasetGuidance
+      ].join('\n');
+      try{
+        const retry=await fetchWithTimeout(`${base}/api/v2/cortex/analyst/message`,{
+          method:'POST',
+          headers:snowHeaders(pat),
+          body:JSON.stringify({
+            messages:[{role:'user',content:[{type:'text',text:retryQuestion}]}],
+            semantic_view:semanticView,
+            stream:false
+          })
+        },50000);
+        const retryBody=await retry.json().catch(()=>({}));
+        if(retry.ok){
+          const retryParsed=normalizeAnalyst(retryBody);
+          const retrySql=safeSelect(retryParsed.sql);
+          if(retrySql){
+            const retryResult=await executeSql(base,pat,warehouse,retrySql);
+            const retryCols=(retryResult?.columns||[]).map(c=>String(c).toUpperCase());
+            if(retryResult?.rows?.length&&retryCols.some(c=>c.includes('SEA_DEPENDENCY_PCT'))){
+              parsed=retryParsed;
+              sql=retrySql;
+              result=retryResult;
+              fallbackUsed=true;
+              executionWarning='';
+            }
+          }
+        }
+      }catch{}
     }
 
     const needsCrossDomainFallback=domain==='nova'&&
