@@ -719,6 +719,19 @@ async function copyChatResponse(pair){
 function retryChat(pair){
  const question=chatPairQuestion(pair);if(!question)return;truncateConversationFrom(pair);void ask(question);
 }
+function analystFollowupContext(block){
+ const prev=block?.previousElementSibling;
+ if(!prev?.classList?.contains('chat-pair'))return null;
+ const previousQuestion=chatPairQuestion(prev).slice(0,500);
+ const answer=prev.querySelector('.direct-answer')?.innerText?.trim()||'';
+ const grounding=prev.querySelector('.assistant-answer small')?.innerText?.trim()||'';
+ if(!previousQuestion&&!answer)return null;
+ return {
+  previousQuestion,
+  previousAnswer:answer.slice(0,1200),
+  previousGrounding:grounding.slice(0,320)
+ };
+}
 async function ask(q){
  const question=q.trim();if(!question)return;if(view!=='analyst')navigate('analyst');const chat=analystUI();const requestThread=activeAnalystThread();if(!chatCount){chat.log?.replaceChildren();if(requestThread&&requestThread.title==='New chat'){requestThread.title=question.length>52?`${question.slice(0,49)}…`:question;saveAnalystWorkspace();}}
  const {analysisQuestion,wantsRecommendation}=splitCompoundQuestion(question);
@@ -729,7 +742,8 @@ async function ask(q){
   await wait(220);setAnalystProgress(answerEl,'Mapping your question to governed business terms…',1);
   const progressTimer1=setTimeout(()=>setAnalystProgress(answerEl,'Querying Snowflake Cortex Analyst…',2),650);
   const progressTimer2=setTimeout(()=>setAnalystProgress(answerEl,'Preparing the governed answer…',3),1500);
-  const a=await askAnalyst(governedQuestion);clearTimeout(progressTimer1);clearTimeout(progressTimer2);setAnalystProgress(answerEl,'Preparing the governed answer…',3);const rid=`analyst-${Date.now()}`;const hasRows=Boolean(a.result?.rows?.length);const resultHtml=hasRows?`${analystFilters(a.result,rid)}${analystChart(a.result,rid,question)}${analystTable(a.result,rid)}`:'';
+  const followupContext=analystFollowupContext(block);
+  const a=await askAnalyst(governedQuestion,followupContext);clearTimeout(progressTimer1);clearTimeout(progressTimer2);setAnalystProgress(answerEl,'Preparing the governed answer…',3);const rid=`analyst-${Date.now()}`;const hasRows=Boolean(a.result?.rows?.length);const resultHtml=hasRows?`${analystFilters(a.result,rid)}${analystChart(a.result,rid,question)}${analystTable(a.result,rid)}`:'';
   const sql=a.sql?`<details class="analyst-sql"><summary>Audit trail · View generated SQL</summary><pre>${e(a.sql)}</pre></details>`:'';
   const warning=(a.executionWarning||a.fallbackUsed)?`<p class="analyst-warning">${e(a.executionWarning||'OntoTrail broadened the first zero-row weather query so zero exposure and unavailable coverage could be distinguished from a true data failure.')}</p>`:'';
   const suggestions=a.suggestions?.length?`<div class="analyst-suggestions"><span>Explore next</span>${a.suggestions.map(s=>`<button type="button" data-question="${e(s)}">${e(s)}</button>`).join('')}</div>`:'';
