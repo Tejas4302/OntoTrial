@@ -153,6 +153,56 @@ export default async function handler(req,res){
       }catch{}
     }
 
+    }
+
+    const materialRiskCols=result?.columns||[];
+    const materialHighRiskCol=materialRiskCols.find(c=>/HIGH_OPERATIONAL_RISK_PO_VALUE_USD/i.test(String(c)));
+    const materialSupportPresent=materialRiskCols.some(c=>/TOTAL_PO_VALUE_USD|MINIMUM_DAYS_OF_COVER|DELAYED_PO_VALUE_USD|OUTSTANDING_QUANTITY/i.test(String(c)));
+    const allMaterialHighRiskZero=materialHighRiskCol&&result?.rows?.length&&result.rows.every(r=>Number(r[materialHighRiskCol]||0)===0);
+    const needsMaterialContextFallback=domain==='nova'&&
+      intents.some(x=>x.id==='material_risk')&&
+      allMaterialHighRiskZero&&!materialSupportPresent;
+    if(needsMaterialContextFallback){
+      const fallbackQuestion=[
+        question,
+        '',
+        'ONTO TRAIL ZERO-RISK CONTEXT RULE',
+        'The requested HIGH_OPERATIONAL_RISK_PO_VALUE_USD metric is zero across all returned materials.',
+        'Do not rank zero values as if one material is riskier than another.',
+        'Return the material context needed to explain what still warrants monitoring.',
+        'Include MATERIAL_NAME and MATERIAL_CRITICALITY.',
+        'Include HIGH_OPERATIONAL_RISK_PO_VALUE_USD, TOTAL_PO_VALUE_USD, MINIMUM_DAYS_OF_COVER, DELAYED_PO_VALUE_USD and OUTSTANDING_QUANTITY where available.',
+        'Return at least the relevant materials even when HIGH_OPERATIONAL_RISK_PO_VALUE_USD is zero.',
+        datasetGuidance
+      ].join('\n');
+      try{
+        const retry=await fetchWithTimeout(`${base}/api/v2/cortex/analyst/message`,{
+          method:'POST',
+          headers:snowHeaders(pat),
+          body:JSON.stringify({
+            messages:[{role:'user',content:[{type:'text',text:fallbackQuestion}]}],
+            semantic_view:semanticView,
+            stream:false
+          })
+        },50000);
+        const retryBody=await retry.json().catch(()=>({}));
+        if(retry.ok){
+          const retryParsed=normalizeAnalyst(retryBody);
+          const retrySql=safeSelect(retryParsed.sql);
+          if(retrySql){
+            const retryResult=await executeSql(base,pat,warehouse,retrySql);
+            if(retryResult?.rows?.length){
+              parsed=retryParsed;
+              sql=retrySql;
+              result=retryResult;
+              fallbackUsed=true;
+              executionWarning='';
+            }
+          }
+        }
+      }catch{}
+    }
+
     return send(res,200,{
       source:'snowflake-cortex-analyst',
       requestId:body.request_id||analyst.headers.get('x-snowflake-request-id')||'',
