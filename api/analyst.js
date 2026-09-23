@@ -70,8 +70,15 @@ export default async function handler(req,res){
   const previousRows=Array.isArray(previousResult?.result?.rows)?previousResult.result.rows.slice(0,12):[];
   const previousColumns=Array.isArray(previousResult?.result?.columns)?previousResult.result.columns.slice(0,16):[];
   const previousPlan=previousResult?.queryPlan&&typeof previousResult.queryPlan==='object'?previousResult.queryPlan:null;
+  const previousIntents=Array.isArray(previousResult?.intents)?previousResult.intents.slice(0,8):[];
   const hasFollowupContext=Boolean(previousQuestion||previousAnswer||previousRows.length||previousPlan);
-  const plan=resolveQuestionPlan(question,{previousQuestion,previousPlan,hasRows:previousRows.length>0});
+  const plan=resolveQuestionPlan(question,{
+    previousQuestion,
+    previousPlan,
+    previousIntents,
+    previousColumns,
+    hasRows:previousRows.length>0
+  });
 
   if(plan.type==='needs_context'){
     return send(res,200,{
@@ -193,6 +200,64 @@ LIMIT 10`;
         queryPlan:plan,
         fallbackUsed:false,
         followupContextUsed:hasFollowupContext,
+        executionWarning:''
+      });
+    }
+
+    if(plan.type==='operational_impact_followup'&&plan.signal==='weather'){
+      const originCol=previousColumns.find(c=>/ORIGIN_COUNTRY/i.test(String(c)));
+      const origins=originCol
+        ? [...new Set(previousRows.map(row=>String(row?.[originCol]??'').trim()).filter(Boolean))].slice(0,10)
+        : [];
+      const originFilter=origins.length
+        ? ` AND nova.origin_country IN (${origins.map(v=>`'${v.replace(/'/g,"''")}'`).join(',')})`
+        : '';
+      const novaSql=`SELECT * FROM SEMANTIC_VIEW(
+  ${novaSemanticView}
+  METRICS nova.weather_linked_po_value_usd,
+          nova.total_po_value_usd,
+          nova.delayed_po_value_usd,
+          nova.minimum_days_of_cover,
+          nova.outstanding_quantity
+  DIMENSIONS nova.supplier_name,
+             nova.origin_country,
+             nova.material_name,
+             nova.plant_name,
+             nova.supplier_criticality,
+             nova.material_criticality,
+             nova.weather_risk_level,
+             nova.operational_risk_level,
+             nova.marketplace_match_status
+  WHERE nova.marketplace_match_status = 'MATCHED'${originFilter}
+)
+ORDER BY WEATHER_LINKED_PO_VALUE_USD DESC,
+         TOTAL_PO_VALUE_USD DESC,
+         MINIMUM_DAYS_OF_COVER ASC
+LIMIT 25`;
+      const result=await executeSql(base,pat,warehouse,novaSql);
+      return send(res,200,{
+        source:'snowflake-governed-cross-domain',
+        requestId:'operational-impact-weather',
+        semanticView:novaSemanticView,
+        semanticDomain:'nova-operations',
+        intents:['cross_domain','nova_weather_risk','supplier_risk','material_risk'],
+        datasetCoverage:{dimensions:DATASET_DOMAINS.nova.dimensions.length,metrics:DATASET_DOMAINS.nova.metrics.length},
+        warehouse,
+        text:result?.rows?.length
+          ? 'Mapped the prior external weather-risk finding into Marketplace-matched Nova supplier and material exposure.'
+          : (origins.length
+              ? 'None of the prior weather-risk origins currently map to Marketplace-matched Nova operational records.'
+              : 'Nova Mobility currently has no Marketplace-matched operational rows for this external weather signal.'),
+        sql:novaSql,
+        suggestions:[
+          'Which matched suppliers have the highest weather-linked PO exposure?',
+          'Which matched materials have the lowest inventory cover?',
+          'Which plants are most exposed to these weather-linked materials?'
+        ],
+        result,
+        queryPlan:{...plan,type:'operational_impact',signal:'weather',origins},
+        fallbackUsed:false,
+        followupContextUsed:true,
         executionWarning:''
       });
     }
