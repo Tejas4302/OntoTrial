@@ -348,7 +348,33 @@ function analystNarrative(question,result,cortexText='',meta={}){
  if(queryPlan.type==='operational_impact'&&m.rows.length){
   const cols=m.columns.map(c=>String(c));const find=(patterns)=>cols.find(c=>{const u=c.toUpperCase();return patterns.some(p=>p.test(u));});
   const supplierCol=find([/SUPPLIER_NAME/]),materialCol=find([/MATERIAL_NAME/]),originCol=find([/ORIGIN_COUNTRY/]),plantCol=find([/PLANT_NAME/]);
-  const seaCol=find([/AVERAGE_MARKET_SEA_DEPENDENCY_PCT/]),poValueCol=find([/TOTAL_PO_VALUE_USD/]),coverCol=find([/MINIMUM_DAYS_OF_COVER/]),delayedCol=find([/DELAYED_PO_VALUE_USD/]),riskCol=find([/OPERATIONAL_RISK_LEVEL/]);
+  const poValueCol=find([/TOTAL_PO_VALUE_USD/]),coverCol=find([/MINIMUM_DAYS_OF_COVER/]),delayedCol=find([/DELAYED_PO_VALUE_USD/]),riskCol=find([/OPERATIONAL_RISK_LEVEL/]);
+  if(queryPlan.signal==='weather'){
+   const weatherValueCol=find([/WEATHER_LINKED_PO_VALUE_USD/]),weatherCol=find([/WEATHER_RISK_LEVEL/]);
+   const rows=[...m.rows].sort((a,b)=>(analystNumber(b[weatherValueCol])||0)-(analystNumber(a[weatherValueCol])||0)||(analystNumber(b[poValueCol])||0)-(analystNumber(a[poValueCol])||0));
+   const elevated=rows.filter(r=>(analystNumber(r[weatherValueCol])||0)>0||/MEDIUM|HIGH/i.test(String(r[weatherCol]||'')));
+   const selected=(elevated.length?elevated:rows).slice(0,4);
+   const leaders=selected.map(r=>{
+    const label=materialCol&&r[materialCol]?e(r[materialCol]):supplierCol&&r[supplierCol]?e(r[supplierCol]):'Matched exposure';
+    const bits=[];
+    if(supplierCol&&r[supplierCol]&&materialCol)bits.push(e(r[supplierCol]));
+    if(originCol&&r[originCol])bits.push(e(r[originCol]));
+    if(weatherValueCol&&analystNumber(r[weatherValueCol])!==null)bits.push(`${analystFormat(weatherValueCol,r[weatherValueCol])} weather-linked PO exposure`);
+    if(weatherCol&&r[weatherCol])bits.push(`${e(r[weatherCol])} weather signal`);
+    if(poValueCol&&analystNumber(r[poValueCol])!==null)bits.push(`${analystFormat(poValueCol,r[poValueCol])} total PO exposure`);
+    if(coverCol&&analystNumber(r[coverCol])!==null)bits.push(`${analystFormat(coverCol,r[coverCol])} minimum cover`);
+    if(delayedCol&&analystNumber(r[delayedCol])>0)bits.push(`${analystFormat(delayedCol,r[delayedCol])} delayed`);
+    if(riskCol&&r[riskCol])bits.push(`${e(r[riskCol])} operational risk`);
+    if(plantCol&&r[plantCol])bits.push(e(r[plantCol]));
+    return `<strong>${label}</strong> (${bits.join(' · ')})`;
+   }).join(', ');
+   if(elevated.length){
+    return `The prior weather-risk finding affects Nova where those external origins overlap with Marketplace-matched suppliers and materials. The strongest operational overlaps are ${leaders}. Use <strong>weather-linked PO exposure</strong>, inventory cover, delay exposure and operational risk together; the weather signal is external Marketplace context rather than a standalone prediction of disruption.`;
+   }
+   return `The prior weather-risk finding maps to Nova operational records, but none of the matched rows currently shows elevated weather-linked PO exposure. The largest matched operational exposures are ${leaders}. This means the external weather signal is relevant context, but the governed Nova evidence does not currently show elevated weather-linked exposure for those matched records.`;
+  }
+
+  const seaCol=find([/AVERAGE_MARKET_SEA_DEPENDENCY_PCT/]);
   const rows=[...m.rows].sort((a,b)=>(analystNumber(b[seaCol])||0)-(analystNumber(a[seaCol])||0)||(analystNumber(b[poValueCol])||0)-(analystNumber(a[poValueCol])||0));
   const leaders=rows.slice(0,4).map(r=>{
     const label=materialCol&&r[materialCol]?e(r[materialCol]):supplierCol&&r[supplierCol]?e(r[supplierCol]):'Matched exposure';
