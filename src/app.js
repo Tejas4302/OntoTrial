@@ -745,7 +745,7 @@ async function ask(q){
   const followupContext=analystFollowupContext(block);
   const a=await askAnalyst(governedQuestion,followupContext);clearTimeout(progressTimer1);clearTimeout(progressTimer2);setAnalystProgress(answerEl,'Preparing the governed answer…',3);const rid=`analyst-${Date.now()}`;const hasRows=Boolean(a.result?.rows?.length);const resultHtml=hasRows?`${analystFilters(a.result,rid)}${analystChart(a.result,rid,question)}${analystTable(a.result,rid)}`:'';
   const sql=a.sql?`<details class="analyst-sql"><summary>Audit trail · View generated SQL</summary><pre>${e(a.sql)}</pre></details>`:'';
-  const warning=(a.executionWarning||a.fallbackUsed)?`<p class="analyst-warning">${e(a.executionWarning||'OntoTrail broadened the first zero-row weather query so zero exposure and unavailable coverage could be distinguished from a true data failure.')}</p>`:'';
+  const warning=(a.executionWarning||a.fallbackUsed)?`<p class="analyst-warning">${e(a.executionWarning||'OntoTrail broadened the first zero-row cross-domain query so missing direct mappings can be distinguished from a true data failure.')}</p>`:'';
   const suggestions=a.suggestions?.length?`<div class="analyst-suggestions"><span>Explore next</span>${a.suggestions.map(s=>`<button type="button" data-question="${e(s)}">${e(s)}</button>`).join('')}</div>`:'';
   const narrative=analystNarrative(question,a.result||{columns:[],rows:[]},a.text||'');
   const rec=hasRows?recommendationFor(question,a.result):null;
