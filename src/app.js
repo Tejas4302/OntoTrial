@@ -84,6 +84,7 @@ function analystModel(result){
  const dimension=dimensions.find(c=>!/SCENARIO/.test(String(c).toUpperCase()))||dimensions[0];return {columns,rows,numeric,dimensions,metric,dimension};
 }
 function analystNarrative(question,result,cortexText='',meta={}){
+ if(meta?.aiOrchestrated&&cortexText)return e(cortexText).replace(/\n/g,'<br>');
  if(meta?.needsContext)return e(cortexText||'I need the prior finding you want me to connect to our operations. Ask this as a follow-up in the same chat.');
  const m=analystModel(result);if(!m.rows.length)return cortexText?e(cortexText):'No matching records were returned for this question.';
  const q=String(question||'');const asksLowest=/\b(lowest|minimum|min\.?|smallest|least|bottom)\b/i.test(q);const asksHighest=/\b(highest|maximum|max\.?|largest|most|top)\b/i.test(q);
