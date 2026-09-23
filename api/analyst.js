@@ -62,21 +62,40 @@ export default async function handler(req,res){
 
   const question=String(req.body?.question||'').trim();
   if(!question||question.length>MAX_QUESTION)return send(res,400,{error:`Enter a question between 1 and ${MAX_QUESTION} characters.`});
+  const rawContext=req.body?.context&&typeof req.body.context==='object'?req.body.context:null;
+  const previousQuestion=String(rawContext?.previousQuestion||'').trim().slice(0,500);
+  const previousAnswer=String(rawContext?.previousAnswer||'').trim().slice(0,1200);
+  const previousGrounding=String(rawContext?.previousGrounding||'').trim().slice(0,320);
+  const hasFollowupContext=Boolean(previousQuestion||previousAnswer);
+  const followupSignal=/\b(this|that|these|those|it|they|them|affect|impact|follow[- ]?up|what about|how about|operations?|suppliers?|materials?|plants?|purchase orders?|shipments?)\b/i.test(question);
+  const classificationQuestion=hasFollowupContext&&followupSignal
+    ? `${previousQuestion}\nFOLLOW-UP: ${question}`
+    : question;
 
-  const classification=classifyQuestion(question);
+  const classification=classifyQuestion(classificationQuestion);
   const domain=classification.domain;
   const intents=classification.intents;
   const profile=DATASET_DOMAINS[domain]||DATASET_DOMAINS.trade;
   const semanticView=domain==='nova'
     ? (novaSemanticView||profile.defaultSemanticView)
     : (tradeSemanticView||profile.defaultSemanticView);
-  const rowIntent=/\b(rest of world|row)\b/i.test(question);
+  const rowIntent=/\b(rest of world|row)\b/i.test(classificationQuestion);
   const rowGuidance=rowIntent
     ? "Governed ROW rule: Rest of World/ROW is ORIGIN_ISO = 'ROW'. Filter that aggregate directly. Do not substitute a ranking of other countries. Only report weather for ROW when aggregate-row weather coverage exists."
     : "";
-  const datasetGuidance=buildDatasetGuidance(question,domain,intents);
+  const datasetGuidance=buildDatasetGuidance(classificationQuestion,domain,intents);
+  const conversationContext=hasFollowupContext
+    ? [
+        'ONTO TRAIL CONVERSATION CONTEXT',
+        previousQuestion?`Previous user question: ${previousQuestion}`:'',
+        previousAnswer?`Previous governed answer: ${previousAnswer}`:'',
+        previousGrounding?`Previous grounding: ${previousGrounding}`:'',
+        'Interpret the current question as a follow-up to the previous turn. Preserve the earlier finding as context, but only claim an operational impact where the current semantic view has governed evidence. If there is no direct Nova mapping, say so explicitly instead of returning an empty or fabricated answer.'
+      ].filter(Boolean).join('\n')
+    : '';
   const governedQuestion=[
     question,
+    conversationContext,
     "",
     "ONTO TRAIL GOVERNED DATASET INSTRUCTIONS",
     datasetGuidance,
@@ -214,6 +233,7 @@ export default async function handler(req,res){
       suggestions:parsed.suggestions,
       result,
       fallbackUsed,
+      followupContextUsed:hasFollowupContext,
       executionWarning
     });
   }catch(err){
