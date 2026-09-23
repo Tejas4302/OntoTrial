@@ -168,17 +168,14 @@ LIMIT 10`;
       });
     }
 
-    // Deterministic cross-domain handoff from the canonical trade result into Nova operations.
+    // Deterministic cross-domain handoff: translate the prior national sea-dependency signal
+    // into Nova's own matched supplier/material exposure rather than requiring the prior top-10 HS4 list to overlap.
     const priorWasSeaDependency=operationalFollowup&&(
       /\bsea\b/i.test(previousQuestion)||
       previousColumns.some(c=>/SEA_DEPENDENCY_PCT/i.test(String(c)))
     );
-    if(priorWasSeaDependency&&previousRows.length){
-      const hs4Col=previousColumns.find(c=>/HS4/i.test(String(c)));
-      const hs4Values=[...new Set(previousRows.map(r=>String(r?.[hs4Col]??'').trim()).filter(Boolean))].slice(0,10);
-      if(hs4Values.length){
-        const inList=hs4Values.map(v=>`'${v.replace(/'/g,"''")}'`).join(',');
-        const novaSql=`SELECT * FROM SEMANTIC_VIEW(
+    if(priorWasSeaDependency){
+      const novaSql=`SELECT * FROM SEMANTIC_VIEW(
   ${novaSemanticView}
   METRICS nova.total_po_value_usd,
           nova.delayed_po_value_usd,
@@ -186,6 +183,7 @@ LIMIT 10`;
           nova.minimum_days_of_cover,
           nova.average_market_sea_dependency_pct
   DIMENSIONS nova.supplier_name,
+             nova.origin_country,
              nova.material_name,
              nova.hs4_code,
              nova.plant_name,
@@ -194,34 +192,35 @@ LIMIT 10`;
              nova.operational_risk_level,
              nova.inventory_risk_level,
              nova.marketplace_match_status
-  WHERE nova.hs4_code IN (${inList})
+  WHERE nova.marketplace_match_status = 'MATCHED'
 )
-ORDER BY TOTAL_PO_VALUE_USD DESC, MINIMUM_DAYS_OF_COVER ASC
+ORDER BY AVERAGE_MARKET_SEA_DEPENDENCY_PCT DESC,
+         TOTAL_PO_VALUE_USD DESC,
+         MINIMUM_DAYS_OF_COVER ASC
 LIMIT 25`;
-        const result=await executeSql(base,pat,warehouse,novaSql);
-        return send(res,200,{
-          source:'snowflake-governed-cross-domain',
-          requestId:'canonical-sea-to-nova-operations',
-          semanticView:novaSemanticView,
-          semanticDomain:'nova-operations',
-          intents:['cross_domain','supplier_risk','material_risk'],
-          datasetCoverage:{dimensions:DATASET_DOMAINS.nova.dimensions.length,metrics:DATASET_DOMAINS.nova.metrics.length},
-          warehouse,
-          text:result?.rows?.length
-            ? 'Mapped the prior sea-dependency HS4 results into Nova Mobility operational exposure.'
-            : 'None of the prior sea-dependency HS4 results map directly to Nova Mobility operational records.',
-          sql:novaSql,
-          suggestions:[
-            'Which matched Nova materials have the lowest inventory cover?',
-            'Which matched suppliers have delayed PO exposure?',
-            'Which plants receive these matched materials?'
-          ],
-          result,
-          fallbackUsed:false,
-          followupContextUsed:true,
-          executionWarning:''
-        });
-      }
+      const result=await executeSql(base,pat,warehouse,novaSql);
+      return send(res,200,{
+        source:'snowflake-governed-cross-domain',
+        requestId:'canonical-sea-to-nova-operations',
+        semanticView:novaSemanticView,
+        semanticDomain:'nova-operations',
+        intents:['cross_domain','supplier_risk','material_risk'],
+        datasetCoverage:{dimensions:DATASET_DOMAINS.nova.dimensions.length,metrics:DATASET_DOMAINS.nova.metrics.length},
+        warehouse,
+        text:result?.rows?.length
+          ? 'Translated the prior India sea-dependency signal into Nova Mobility supplier and material exposure using Marketplace-matched operational records.'
+          : 'Nova Mobility currently has no Marketplace-matched operational records for this external sea-dependency signal.',
+        sql:novaSql,
+        suggestions:[
+          'Which of these matched materials have the lowest inventory cover?',
+          'Which matched suppliers also have delayed PO exposure?',
+          'Which plants are most exposed to these sea-dependent materials?'
+        ],
+        result,
+        fallbackUsed:false,
+        followupContextUsed:true,
+        executionWarning:''
+      });
     }
 
     const analyst=await fetchWithTimeout(`${base}/api/v2/cortex/analyst/message`,{
