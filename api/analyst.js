@@ -130,9 +130,10 @@ async function aiPlanQuestion(base,pat,model,input){
       mapping_keys:{type:'array',items:{type:'string',enum:['HS4_CODE','COMMODITY_GROUP','ORIGIN_COUNTRY']},maxItems:3},
       required_dimensions:{type:'array',items:{type:'string'},maxItems:12},
       required_metrics:{type:'array',items:{type:'string'},maxItems:12},
-      caution:{type:'string'}
+      caution:{type:'string'},
+      answer_mode:{type:'string',enum:['analysis','decision_support']}
     },
-    required:['request_type','source_domain','target_domain','semantic_query','answer_goal','mapping_keys','required_dimensions','required_metrics','caution']
+    required:['request_type','source_domain','target_domain','semantic_query','answer_goal','mapping_keys','required_dimensions','required_metrics','caution','answer_mode']
   };
   const system=[
     'You are the OntoTrail AI Orchestrator for governed supply-chain analytics.',
@@ -140,6 +141,10 @@ async function aiPlanQuestion(base,pat,model,input){
     'Choose the governed data domain, business metrics, dimensions, filters and valid ontology mappings needed to answer.',
     'In this workspace, us/our/our operations means Nova Mobility.',
     'For follow-up questions, use the previous governed result. Never invent a relationship.',
+    'Infer whether the user wants analysis or decision support from meaning and conversation context, not exact wording.',
+    'If the user asks what the company should do, what action to take, how to respond, mitigate, prioritize, or decide, set answer_mode to decision_support.',
+    'Decision support for Nova Mobility must use Nova operational evidence. External trade/weather evidence alone can identify context or exposure, but cannot justify a company action.',
+    'Therefore, when a decision-support follow-up is based on prior external Marketplace/trade evidence and prior governed rows are available, plan a cross_domain request from trade to nova using only a valid shared ontology key.',
     'Use only mappings in the VALID CROSS-DOMAIN ONTOLOGY. Prefer the narrowest valid mapping present in the previous result: HS4_CODE, then COMMODITY_GROUP, then ORIGIN_COUNTRY.',
     'If the user refers to prior context and there is no usable previous result, return needs_context.',
     'semantic_query must be a self-contained natural-language request for Cortex Analyst with the intended metric, dimensions, filters and period. Do not generate SQL.',
@@ -188,7 +193,10 @@ async function aiSynthesize(base,pat,model,input){
     'Only describe confirmed operational disruption when internal data supports it. Otherwise describe monitoring priority, exposure, or potential vulnerability.',
     'Suppress zero-value metrics unless a zero changes the conclusion.',
     'Use 2 to 4 concise paragraphs: direct answer, strongest evidence, then decision implication.',
-    'Never invent a cause, forecast, supplier fact, event, or risk absent from the evidence.',
+    'When orchestration_plan.answer_mode is decision_support, recommend an action only when the current Nova evidence supports it. Tie the recommendation to the specific internal evidence that justifies it.',
+    'If the evidence shows exposure but not disruption, recommend monitoring, contingency validation, inventory protection, supplier engagement, or scenario testing rather than claiming an alternate source is required.',
+    'If the evidence is insufficient for a concrete action, say what should be checked next instead of manufacturing a recommendation.',
+    'Never invent a cause, forecast, supplier fact, event, owner, or risk absent from the evidence.',
     aiDomainContract()
   ].join('\n');
   const out=await cortexAiJson(base,pat,model,system,JSON.stringify(input),schema,1400);
@@ -219,6 +227,8 @@ export default async function handler(req,res){
   const previousColumns=Array.isArray(previousResult?.result?.columns)?previousResult.result.columns.slice(0,16):[];
   const previousPlan=previousResult?.queryPlan&&typeof previousResult.queryPlan==='object'?previousResult.queryPlan:null;
   const previousIntents=Array.isArray(previousResult?.intents)?previousResult.intents.slice(0,8):[];
+  const previousSemanticDomain=String(previousResult?.semanticDomain||'').trim();
+  const previousSemanticView=String(previousResult?.semanticView||'').trim();
   const hasFollowupContext=Boolean(previousQuestion||previousAnswer||previousRows.length||previousPlan);
   const aiModel=process.env.SNOWFLAKE_CORTEX_MODEL||'openai-gpt-5';
   let aiPlan=null;
@@ -230,10 +240,26 @@ export default async function handler(req,res){
       previous_answer:previousAnswer||null,
       previous_result_columns:previousColumns,
       previous_intents:previousIntents,
+      previous_semantic_domain:previousSemanticDomain||null,
+      previous_semantic_view:previousSemanticView||null,
       previous_rows_available:previousRows.length>0
     });
   }catch(err){
     aiPlannerWarning=err&&err.message?err.message:'AI planner unavailable.';
+  }
+
+  if(aiPlan&&aiPlan.answer_mode==='decision_support'&&previousRows.length&&/trade|marketplace/i.test(previousSemanticDomain||previousSemanticView)){
+    const availableMappings=AI_MAPPING_CATALOG
+      .filter(function(m){return previousColumns.some(function(c){return m.source.test(String(c));});})
+      .sort(function(a,b){return a.priority-b.priority;})
+      .map(function(m){return m.key;});
+    aiPlan=Object.assign({},aiPlan,{
+      request_type:'cross_domain',
+      source_domain:'trade',
+      target_domain:'nova',
+      mapping_keys:(aiPlan.mapping_keys&&aiPlan.mapping_keys.length)?aiPlan.mapping_keys:availableMappings,
+      caution:[aiPlan.caution,'Company recommendations must be based on Nova operational evidence; external evidence is context only.'].filter(Boolean).join(' ')
+    });
   }
 
   if(aiPlan){
