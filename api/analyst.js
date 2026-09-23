@@ -64,20 +64,46 @@ function parseCortexJson(body){
   throw Error('Cortex AI returned invalid structured output.');
 }
 async function cortexAiJson(base,pat,model,system,user,schema,maxTokens){
-  const response=await fetchWithTimeout(base+'/api/v2/cortex/v1/chat/completions',{
-    method:'POST',
-    headers:snowHeaders(pat),
-    body:JSON.stringify({
-      model,
-      temperature:0,
-      max_tokens:maxTokens||1600,
-      messages:[{role:'system',content:system},{role:'user',content:user}],
-      response_format:{type:'json_schema',json_schema:{name:'ontotrail_output',strict:true,schema}}
-    })
-  },50000);
-  const body=await response.json().catch(()=>({}));
-  if(!response.ok)throw Error((body&&body.message)||(body&&body.error&&body.error.message)||('Cortex AI returned '+response.status+'.'));
-  return parseCortexJson(body);
+  const endpoint=base+'/api/v2/cortex/v1/chat/completions';
+  const baseBody={
+    model,
+    temperature:0,
+    max_tokens:maxTokens||1600,
+    messages:[
+      {role:'system',content:system},
+      {role:'user',content:user}
+    ]
+  };
+
+  // Prefer structured outputs, but retry with plain JSON instructions because
+  // model/account support for json_schema can vary.
+  const attempts=[
+    {...baseBody,response_format:{type:'json_schema',json_schema:{name:'ontotrail_output',strict:true,schema}}},
+    {...baseBody,messages:[
+      {role:'system',content:system+'\nReturn ONLY a valid JSON object. Do not use markdown fences. The JSON must match this schema: '+JSON.stringify(schema)},
+      {role:'user',content:user}
+    ]}
+  ];
+
+  let lastError='Cortex AI request failed.';
+  for(const bodyPayload of attempts){
+    try{
+      const response=await fetchWithTimeout(endpoint,{
+        method:'POST',
+        headers:snowHeaders(pat),
+        body:JSON.stringify(bodyPayload)
+      },50000);
+      const body=await response.json().catch(()=>({}));
+      if(!response.ok){
+        lastError=(body&&body.message)||(body&&body.error&&body.error.message)||('Cortex AI returned '+response.status+'.');
+        continue;
+      }
+      return parseCortexJson(body);
+    }catch(err){
+      lastError=err&&err.message?err.message:lastError;
+    }
+  }
+  throw Error(lastError);
 }
 function aiDomainContract(){
   return [
