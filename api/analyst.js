@@ -248,7 +248,12 @@ export default async function handler(req,res){
     aiPlannerWarning=err&&err.message?err.message:'AI planner unavailable.';
   }
 
-  if(aiPlan&&aiPlan.answer_mode==='decision_support'&&previousRows.length&&/trade|marketplace/i.test(previousSemanticDomain||previousSemanticView)){
+  const previousLooksNova=/nova/i.test(previousSemanticDomain||previousSemanticView)||
+    previousColumns.some(function(c){return /SUPPLIER_NAME|MATERIAL_NAME|PLANT_NAME|SHIPMENT_ID|PO_ID|OPERATIONAL_RISK|INVENTORY_RISK/i.test(String(c));});
+  const previousLooksTrade=/trade|marketplace/i.test(previousSemanticDomain||previousSemanticView)||
+    previousColumns.some(function(c){return /IMPORT_VALUE|EXPORT_VALUE|SEA_DEPENDENCY|AIR_DEPENDENCY|TRADE_WEIGHTED_WEATHER|ORIGIN_COUNTRY|COMMODITY_HEADING/i.test(String(c));});
+
+  if(aiPlan&&aiPlan.answer_mode==='decision_support'&&previousRows.length&&previousLooksTrade&&!previousLooksNova){
     const availableMappings=AI_MAPPING_CATALOG
       .filter(function(m){return previousColumns.some(function(c){return m.source.test(String(c));});})
       .sort(function(a,b){return a.priority-b.priority;})
@@ -260,6 +265,48 @@ export default async function handler(req,res){
       mapping_keys:(aiPlan.mapping_keys&&aiPlan.mapping_keys.length)?aiPlan.mapping_keys:availableMappings,
       caution:[aiPlan.caution,'Company recommendations must be based on Nova operational evidence; external evidence is context only.'].filter(Boolean).join(' ')
     });
+  }
+
+  if(aiPlan&&aiPlan.answer_mode==='decision_support'&&previousRows.length&&previousLooksNova){
+    try{
+      const decisionPlan=Object.assign({},aiPlan,{
+        request_type:'single_domain',
+        source_domain:'nova',
+        target_domain:'none',
+        caution:[aiPlan.caution,'Use the existing Nova operational evidence from the immediately previous turn. Do not fall back to the trade semantic view.'].filter(Boolean).join(' ')
+      });
+      const synthesis=await aiSynthesize(base,pat,aiModel,{
+        current_question:question,
+        orchestration_plan:decisionPlan,
+        previous_question:previousQuestion||null,
+        previous_answer:previousAnswer||null,
+        mapping:null,
+        previous_governed_evidence:compactAiResult(previousResult&&previousResult.result||{}),
+        current_governed_evidence:compactAiResult(previousResult&&previousResult.result||{})
+      });
+      return send(res,200,{
+        source:'snowflake-ai-orchestrated',
+        requestId:'ai-decision-support-from-nova-context',
+        semanticView:previousSemanticView||novaSemanticView,
+        semanticDomain:'nova-operations',
+        intents:['decision_support'],
+        datasetCoverage:{dimensions:DATASET_DOMAINS.nova.dimensions.length,metrics:DATASET_DOMAINS.nova.metrics.length},
+        warehouse,
+        text:synthesis.combined_answer,
+        sql:'',
+        suggestions:[],
+        result:previousResult&&previousResult.result?previousResult.result:null,
+        queryPlan:decisionPlan,
+        orchestrationPlan:decisionPlan,
+        aiOrchestrated:true,
+        reusedPriorEvidence:true,
+        fallbackUsed:false,
+        followupContextUsed:true,
+        executionWarning:''
+      });
+    }catch(err){
+      aiPlannerWarning='AI decision-support synthesis fallback: '+(err&&err.message?err.message:'unknown synthesis error');
+    }
   }
 
   if(aiPlan){
