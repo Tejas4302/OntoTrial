@@ -482,3 +482,263 @@ td .text-button{white-space:nowrap}
  .grounding-grid,.ai-scenario-grid{grid-template-columns:1fr}
  .analyst-workflow-actions .small,.scenario-seed-actions button{width:100%;justify-content:center}
 }
+
+
+/* v3.0.0 — OntoTrail Aurora UI */
+:root{
+  --ot-navy:#0b2942;
+  --ot-navy-2:#123a55;
+  --ot-teal:#078b7c;
+  --ot-teal-2:#11a88f;
+  --ot-cyan:#35c4ca;
+  --ot-mint:#e9fbf6;
+  --ot-ice:#eff9fb;
+  --ot-lavender:#eef2ff;
+  --ot-glass:rgba(255,255,255,.78);
+  --ot-glass-strong:rgba(255,255,255,.91);
+  --ot-gradient:linear-gradient(135deg,var(--ot-navy) 0%,var(--ot-teal) 58%,var(--ot-cyan) 100%);
+  --ot-gradient-soft:linear-gradient(135deg,rgba(7,139,124,.13),rgba(53,196,202,.10) 48%,rgba(111,132,255,.08));
+  --ot-shadow:0 18px 48px rgba(13,54,73,.10),0 2px 8px rgba(13,54,73,.05);
+}
+html{background:#f4f8f9}
+body{
+  background:
+    radial-gradient(circle at 13% 8%,rgba(53,196,202,.11),transparent 30%),
+    radial-gradient(circle at 82% 13%,rgba(7,139,124,.10),transparent 27%),
+    radial-gradient(circle at 70% 84%,rgba(116,130,255,.07),transparent 30%),
+    linear-gradient(180deg,#f8fbfc 0%,#f2f7f8 52%,#f8fbfc 100%);
+  background-attachment:fixed;
+}
+body::before{
+  content:"";
+  position:fixed;inset:-20% -10%;pointer-events:none;z-index:-1;
+  background:
+    radial-gradient(circle at 22% 30%,rgba(47,209,187,.08),transparent 22%),
+    radial-gradient(circle at 78% 28%,rgba(73,155,226,.07),transparent 24%);
+  filter:blur(30px);
+  animation:ontotrail-aurora 18s ease-in-out infinite alternate;
+}
+@keyframes ontotrail-aurora{to{transform:translate3d(2.5%,-1.5%,0) scale(1.04)}}
+
+/* Brand navigation: dark aurora rail with soft glass selection. */
+.sidebar{
+  background:
+    radial-gradient(circle at 34% 0%,rgba(53,196,202,.19),transparent 30%),
+    linear-gradient(180deg,#0b2942 0%,#0b3144 52%,#0a263a 100%);
+  border-right:1px solid rgba(255,255,255,.06);
+  box-shadow:14px 0 40px rgba(8,37,55,.08);
+}
+.brand-mark-shell{
+  background:linear-gradient(145deg,#fff 0%,#f6ffff 100%);
+  border:1px solid rgba(255,255,255,.75);
+  box-shadow:0 10px 28px rgba(0,0,0,.18),inset 0 0 0 1px rgba(7,139,124,.05);
+}
+.brand-wordmark{
+  background:linear-gradient(90deg,#fff 0%,#e8ffff 56%,#a9f2e8 100%);
+  -webkit-background-clip:text;background-clip:text;color:transparent!important;
+}
+.nav-item{transition:background .18s ease,color .18s ease,transform .18s ease,border-color .18s ease}
+.nav-item:hover{background:rgba(255,255,255,.075);transform:translateX(2px)}
+.nav-item.active{
+  background:linear-gradient(135deg,rgba(32,195,166,.24),rgba(47,160,198,.13));
+  border-color:rgba(116,226,202,.28);
+  box-shadow:inset 0 0 0 1px rgba(255,255,255,.025),0 10px 22px rgba(0,0,0,.10);
+}
+.nav-item.active .icon{color:#83ead5}
+
+/* Frosted app chrome. */
+.topbar{
+  background:rgba(255,255,255,.78);
+  backdrop-filter:blur(18px) saturate(1.2);
+  -webkit-backdrop-filter:blur(18px) saturate(1.2);
+  border-bottom:1px solid rgba(172,196,207,.48);
+  box-shadow:0 7px 30px rgba(18,61,77,.035);
+}
+.notice-bar{
+  background:rgba(248,252,253,.72);
+  backdrop-filter:blur(14px);
+  -webkit-backdrop-filter:blur(14px);
+  border-bottom-color:rgba(184,205,214,.42);
+}
+.role-badge,.demo-indicator{
+  border:1px solid rgba(7,139,124,.13);
+  background:rgba(239,251,247,.72);
+  border-radius:999px;
+}
+.role-badge{padding:7px 11px;color:#295d58}
+
+/* Gemini-inspired soft surfaces, retaining OntoTrail's brand language. */
+.panel,.metric,.analyst-library,.analyst-page,.document-card,.saved-card,.profile-page{
+  background:var(--ot-glass);
+  border-color:rgba(182,205,214,.55);
+  box-shadow:var(--ot-shadow);
+  backdrop-filter:blur(15px) saturate(1.1);
+  -webkit-backdrop-filter:blur(15px) saturate(1.1);
+}
+.metric,.saved-card,.document-card{
+  position:relative;overflow:hidden;
+}
+.metric::before,.saved-card::before,.document-card::before{
+  content:"";position:absolute;inset:0 0 auto;height:2px;
+  background:linear-gradient(90deg,var(--ot-teal),var(--ot-cyan),rgba(111,132,255,.55));
+  opacity:.72;
+}
+.metric:hover,.saved-card:hover,.document-card:hover{
+  transform:translateY(-2px);
+  box-shadow:0 22px 52px rgba(13,54,73,.13),0 3px 10px rgba(13,54,73,.06);
+}
+.metric,.saved-card,.document-card{transition:transform .18s ease,box-shadow .18s ease,border-color .18s ease}
+.metric:hover{border-color:rgba(65,177,169,.38)}
+
+.primary{
+  background:var(--ot-gradient);
+  border-color:transparent;
+  box-shadow:0 7px 18px rgba(7,139,124,.19);
+  transition:transform .16s ease,box-shadow .16s ease,filter .16s ease;
+}
+.primary:hover{
+  background:var(--ot-gradient);
+  transform:translateY(-1px);
+  filter:saturate(1.05) brightness(1.02);
+  box-shadow:0 12px 25px rgba(7,139,124,.24);
+}
+.secondary{
+  background:rgba(255,255,255,.70);
+  border-color:rgba(176,201,211,.72);
+  backdrop-filter:blur(10px);
+  -webkit-backdrop-filter:blur(10px);
+}
+.secondary:hover{background:rgba(244,251,251,.92);border-color:rgba(81,171,166,.42)}
+.text-button{color:var(--ot-teal)}
+.text-button:hover{color:#046d63}
+
+/* Accent headings and KPIs without reducing readability. */
+.page-heading h1,.analyst-page-welcome h3,.landing h1,.auth-story h1{
+  letter-spacing:-.035em;
+}
+.teal-number,.risk-number{background:linear-gradient(135deg,#087d71,#1cbca3);-webkit-background-clip:text;background-clip:text;color:transparent}
+.eyebrow{color:#087d71}
+
+/* AI workspace: spacious conversational canvas + luminous composer. */
+body.analyst-mode{
+  background:
+    radial-gradient(circle at 70% 8%,rgba(57,206,191,.12),transparent 29%),
+    radial-gradient(circle at 47% 80%,rgba(85,138,220,.07),transparent 31%),
+    #f7fbfb;
+}
+body.analyst-mode #main{background:transparent}
+body.analyst-mode .analyst-page{
+  background:
+    radial-gradient(circle at 75% 0%,rgba(59,202,191,.065),transparent 25%),
+    rgba(255,255,255,.73);
+  border:1px solid rgba(183,207,214,.58);
+  box-shadow:0 22px 58px rgba(16,57,75,.08);
+}
+body.analyst-mode .analyst-library{
+  background:rgba(255,255,255,.68);
+  border-color:rgba(180,205,213,.53);
+}
+body.analyst-mode .analyst-page-head{
+  background:linear-gradient(180deg,rgba(255,255,255,.82),rgba(250,254,254,.66));
+  border-bottom-color:rgba(186,209,217,.42);
+}
+body.analyst-mode .analyst-suggestion-strip{
+  background:rgba(248,252,253,.55);
+  border-bottom-color:rgba(186,209,217,.40);
+}
+.analyst-suggestion-strip button,.chat-suggestions button,.analyst-starter-grid button{
+  background:rgba(255,255,255,.66);
+  border:1px solid rgba(160,197,205,.60);
+  box-shadow:0 4px 14px rgba(18,70,82,.045);
+  transition:transform .16s ease,background .16s ease,border-color .16s ease,box-shadow .16s ease;
+}
+.analyst-suggestion-strip button:hover,.chat-suggestions button:hover,.analyst-starter-grid button:hover{
+  transform:translateY(-1px);
+  background:linear-gradient(135deg,rgba(238,251,247,.92),rgba(239,249,252,.92));
+  border-color:rgba(55,172,163,.52);
+  box-shadow:0 9px 20px rgba(17,92,102,.08);
+}
+body.analyst-mode .user-question{
+  background:linear-gradient(135deg,#0c2d45 0%,#0d4151 55%,#087d71 100%);
+  color:#fff;
+  box-shadow:0 10px 22px rgba(7,53,67,.15);
+}
+body.analyst-mode .assistant-answer>.direct-answer{
+  color:#18384a;
+}
+.answer-heading strong{
+  background:linear-gradient(90deg,#0c695f,#159a87,#2c8dad);
+  -webkit-background-clip:text;background-clip:text;color:transparent;
+}
+.live-pill{
+  background:linear-gradient(135deg,rgba(230,251,245,.95),rgba(234,250,253,.92));
+  border-color:rgba(53,185,165,.36)!important;
+  color:#087365!important;
+  box-shadow:0 4px 14px rgba(25,148,132,.07);
+}
+body.analyst-mode .analyst-page-form{
+  background:rgba(255,255,255,.90);
+  border:1px solid transparent;
+  background-clip:padding-box;
+  box-shadow:0 16px 42px rgba(17,65,82,.13),0 0 0 1px rgba(46,175,165,.20);
+}
+body.analyst-mode .analyst-page-form::before{
+  content:"";position:absolute;inset:-1px;border-radius:17px;padding:1px;pointer-events:none;
+  background:linear-gradient(120deg,rgba(7,139,124,.72),rgba(53,196,202,.55),rgba(109,128,232,.38),rgba(7,139,124,.55));
+  background-size:220% 220%;
+  animation:ontotrail-composer-glow 7s ease infinite;
+  -webkit-mask:linear-gradient(#000 0 0) content-box,linear-gradient(#000 0 0);
+  -webkit-mask-composite:xor;mask-composite:exclude;
+}
+@keyframes ontotrail-composer-glow{50%{background-position:100% 50%}}
+body.analyst-mode .analyst-page-form input::placeholder{color:#7b909b}
+body.analyst-mode .analyst-thread.active{
+  background:linear-gradient(135deg,rgba(229,248,242,.95),rgba(230,247,250,.85));
+  color:#0b6e63;
+  box-shadow:inset 0 0 0 1px rgba(86,187,170,.10);
+}
+body.analyst-mode .analyst-thread:hover{background:rgba(239,247,248,.86)}
+
+/* Explainability + scenario/decision cards use a gentle intelligence gradient. */
+.grounding-panel,.ai-scenario-seed,.recommendation-card{
+  background:
+    linear-gradient(135deg,rgba(238,251,247,.86),rgba(244,250,253,.88) 58%,rgba(245,246,255,.74));
+  border-color:rgba(132,195,192,.40);
+  box-shadow:0 10px 28px rgba(17,78,85,.06);
+}
+
+/* Landing / sign-in get the same branded aurora treatment. */
+.entry-nav,.platform-top{
+  background:rgba(255,255,255,.76)!important;
+  backdrop-filter:blur(18px);
+  -webkit-backdrop-filter:blur(18px);
+}
+.landing,.auth-main,.platform-admin{background:transparent}
+.hero-visual,.auth-card,.platform-panel{
+  background:rgba(255,255,255,.79)!important;
+  backdrop-filter:blur(18px);
+  -webkit-backdrop-filter:blur(18px);
+  border-color:rgba(177,203,213,.55)!important;
+  box-shadow:var(--ot-shadow)!important;
+}
+.hero-copy em,.auth-story em{
+  background:linear-gradient(90deg,var(--ot-teal),var(--ot-cyan),#6c87d9);
+  -webkit-background-clip:text;background-clip:text;color:transparent;
+}
+.product-preview{
+  background:
+    radial-gradient(circle at 74% 20%,rgba(53,196,202,.14),transparent 30%),
+    linear-gradient(145deg,rgba(255,255,255,.92),rgba(239,250,249,.87))!important;
+}
+
+/* Better table depth while keeping data dense and readable. */
+th{background:rgba(246,250,251,.78)}
+tbody tr:hover{background:rgba(238,248,247,.68)}
+.status.covered{background:linear-gradient(135deg,#e8f8f2,#edfafa)}
+.status.risk{background:linear-gradient(135deg,#fff4e5,#fff8ed)}
+
+/* Respect motion preferences. */
+@media(prefers-reduced-motion:reduce){
+  body::before,body.analyst-mode .analyst-page-form::before{animation:none!important}
+  .metric,.saved-card,.document-card,.nav-item,.primary{transition:none!important}
+}
