@@ -136,14 +136,14 @@ export default async function handler(req,res){
   ${tradeSemanticView}
   METRICS trade_risk.sea_dependency_pct,
           trade_risk.import_value_usd
-  DIMENSIONS trade_risk.hs4_str,
-             trade_risk.heading,
+  DIMENSIONS trade_risk.hs4_code,
+             trade_risk.commodity_heading,
              trade_risk.trade_year,
              trade_risk.trade_direction
   WHERE trade_risk.trade_year = 2026
     AND trade_risk.trade_direction = 'IMPORT'
 )
-ORDER BY SEA_DEPENDENCY_PCT DESC, IMPORT_VALUE_USD DESC, HS4_STR ASC
+ORDER BY SEA_DEPENDENCY_PCT DESC, IMPORT_VALUE_USD DESC, HS4_CODE ASC
 LIMIT 10`;
       const result=await executeSql(base,pat,warehouse,canonicalSql);
       return send(res,200,{
