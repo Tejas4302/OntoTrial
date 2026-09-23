@@ -129,21 +129,24 @@ export default async function handler(req,res){
       catch(err){executionWarning=err.message||'The generated SQL could not be executed.';}
     }
 
-    const needsWeatherFallback=domain==='nova'&&
+    const needsCrossDomainFallback=domain==='nova'&&
       intents.some(x=>['cross_domain','nova_weather_risk'].includes(x.id))&&
       (!result?.rows?.length);
-    if(needsWeatherFallback){
+    if(needsCrossDomainFallback){
+      const weatherSpecific=intents.some(x=>x.id==='nova_weather_risk')||/\bweather\b/i.test(classificationQuestion);
       const fallbackQuestion=[
         question,
+        conversationContext,
         '',
-        'ONTO TRAIL FALLBACK RULE',
-        'The first query returned no rows. Do NOT filter the Nova dataset to only MEDIUM/HIGH weather risk.',
-        'Return all relevant Nova suppliers so the application can distinguish elevated exposure from zero exposure or unavailable weather coverage.',
-        'Include SUPPLIER_NAME, ORIGIN_COUNTRY, SUPPLIER_TIER, SUPPLIER_CRITICALITY, WEATHER_RISK_LEVEL and MARKETPLACE_MATCH_STATUS where available.',
-        'Include TOTAL_PO_VALUE_USD, WEATHER_LINKED_PO_VALUE_USD, MINIMUM_DAYS_OF_COVER, DELAYED_PO_VALUE_USD and AVERAGE_MARKET_SEA_DEPENDENCY_PCT where available.',
-        'If no supplier has elevated weather-linked PO value, return suppliers with zero values rather than an empty result.',
+        'ONTO TRAIL CROSS-DOMAIN FALLBACK RULE',
+        'The first Nova query returned no rows. Do not treat that as proof that the external signal has no operational relevance.',
+        'Return the relevant Nova supplier/material/PO/plant records needed to evaluate whether the previous external trade, transport or weather finding maps to Nova operations.',
+        'Include SUPPLIER_NAME, ORIGIN_COUNTRY, SUPPLIER_TIER, SUPPLIER_CRITICALITY and MARKETPLACE_MATCH_STATUS where available.',
+        'Include TOTAL_PO_VALUE_USD, MINIMUM_DAYS_OF_COVER, DELAYED_PO_VALUE_USD and AVERAGE_MARKET_SEA_DEPENDENCY_PCT where available.',
+        weatherSpecific?'Also include WEATHER_RISK_LEVEL and WEATHER_LINKED_PO_VALUE_USD where available. Do not filter out LOW or unavailable weather coverage.':'Do not require an elevated weather condition unless the user explicitly asked for weather.',
+        'If the external countries or aggregates from the previous answer do not directly map to a Nova supplier, return the relevant Nova records and clearly state that there is no direct mapping instead of returning an empty result.',
         datasetGuidance
-      ].join('\n');
+      ].filter(Boolean).join('\n');
       try{
         const retry=await fetchWithTimeout(`${base}/api/v2/cortex/analyst/message`,{
           method:'POST',
