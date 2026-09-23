@@ -49,6 +49,128 @@ async function executeSql(base,pat,warehouse,sql){
   return normalizeRows(body);
 }
 
+const AI_MAPPING_CATALOG=Object.freeze([
+  {key:'HS4_CODE',source:/^HS4_CODE$|^HS4_STR$|^HS4$/i,target:'nova.hs4_code',priority:1},
+  {key:'COMMODITY_GROUP',source:/^COMMODITY_GROUP$/i,target:'nova.commodity_group',priority:2},
+  {key:'ORIGIN_COUNTRY',source:/^ORIGIN_COUNTRY$/i,target:'nova.origin_country',priority:3}
+]);
+
+function parseCortexJson(body){
+  const raw=body&&body.choices&&body.choices[0]&&body.choices[0].message&&body.choices[0].message.content;
+  if(typeof raw!=='string'||!raw.trim())throw Error('Cortex AI returned no structured content.');
+  try{return JSON.parse(raw);}catch{}
+  const match=raw.match(/\{[\s\S]*\}/);
+  if(match){try{return JSON.parse(match[0]);}catch{}}
+  throw Error('Cortex AI returned invalid structured output.');
+}
+async function cortexAiJson(base,pat,model,system,user,schema,maxTokens){
+  const response=await fetchWithTimeout(base+'/api/v2/cortex/v1/chat/completions',{
+    method:'POST',
+    headers:snowHeaders(pat),
+    body:JSON.stringify({
+      model,
+      temperature:0,
+      max_tokens:maxTokens||1600,
+      messages:[{role:'system',content:system},{role:'user',content:user}],
+      response_format:{type:'json_schema',json_schema:{name:'ontotrail_output',strict:true,schema}}
+    })
+  },50000);
+  const body=await response.json().catch(()=>({}));
+  if(!response.ok)throw Error((body&&body.message)||(body&&body.error&&body.error.message)||('Cortex AI returned '+response.status+'.'));
+  return parseCortexJson(body);
+}
+function aiDomainContract(){
+  return [
+    'TRADE DOMAIN dimensions: '+DATASET_DOMAINS.trade.dimensions.join(', '),
+    'TRADE DOMAIN metrics: '+DATASET_DOMAINS.trade.metrics.join(', '),
+    'TRADE DOMAIN rules: '+DATASET_DOMAINS.trade.constraints.join(' '),
+    'NOVA DOMAIN dimensions: '+DATASET_DOMAINS.nova.dimensions.join(', '),
+    'NOVA DOMAIN metrics: '+DATASET_DOMAINS.nova.metrics.join(', '),
+    'NOVA DOMAIN rules: '+DATASET_DOMAINS.nova.constraints.join(' '),
+    'VALID CROSS-DOMAIN ONTOLOGY: HS4_CODE <-> HS4_CODE; COMMODITY_GROUP <-> COMMODITY_GROUP; ORIGIN_COUNTRY <-> ORIGIN_COUNTRY.',
+    'Supplier -> Material -> Purchase Order -> Shipment -> Plant relationships exist only inside Nova operations.',
+    'A shared country or commodity means contextual overlap, not proof of causation or confirmed disruption.'
+  ].join('\n');
+}
+async function aiPlanQuestion(base,pat,model,input){
+  const schema={
+    type:'object',additionalProperties:false,
+    properties:{
+      request_type:{type:'string',enum:['single_domain','cross_domain','needs_context']},
+      source_domain:{type:'string',enum:['trade','nova']},
+      target_domain:{type:'string',enum:['trade','nova','none']},
+      semantic_query:{type:'string'},
+      answer_goal:{type:'string'},
+      mapping_keys:{type:'array',items:{type:'string',enum:['HS4_CODE','COMMODITY_GROUP','ORIGIN_COUNTRY']},maxItems:3},
+      required_dimensions:{type:'array',items:{type:'string'},maxItems:12},
+      required_metrics:{type:'array',items:{type:'string'},maxItems:12},
+      caution:{type:'string'}
+    },
+    required:['request_type','source_domain','target_domain','semantic_query','answer_goal','mapping_keys','required_dimensions','required_metrics','caution']
+  };
+  const system=[
+    'You are the OntoTrail AI Orchestrator for governed supply-chain analytics.',
+    'Understand meaning from the full conversation. Do not rely on memorized question wording.',
+    'Choose the governed data domain, business metrics, dimensions, filters and valid ontology mappings needed to answer.',
+    'In this workspace, us/our/our operations means Nova Mobility.',
+    'For follow-up questions, use the previous governed result. Never invent a relationship.',
+    'Use only mappings in the VALID CROSS-DOMAIN ONTOLOGY. Prefer the narrowest valid mapping present in the previous result: HS4_CODE, then COMMODITY_GROUP, then ORIGIN_COUNTRY.',
+    'If the user refers to prior context and there is no usable previous result, return needs_context.',
+    'semantic_query must be a self-contained natural-language request for Cortex Analyst with the intended metric, dimensions, filters and period. Do not generate SQL.',
+    aiDomainContract()
+  ].join('\n');
+  return cortexAiJson(base,pat,model,system,JSON.stringify(input),schema,1600);
+}
+function selectAiMapping(mappingKeys,columns,rows){
+  const wanted=new Set((mappingKeys||[]).map(function(x){return String(x).toUpperCase();}));
+  const ordered=AI_MAPPING_CATALOG.filter(function(m){return wanted.has(m.key);}).sort(function(a,b){return a.priority-b.priority;});
+  for(const map of ordered){
+    const sourceColumn=(columns||[]).find(function(c){return map.source.test(String(c));});
+    if(!sourceColumn)continue;
+    const values=[...new Set((rows||[]).map(function(row){return String((row&&row[sourceColumn])||'').trim();}).filter(Boolean))].slice(0,20);
+    if(values.length)return Object.assign({},map,{sourceColumn,values});
+  }
+  return null;
+}
+function sqlLiteral(value){return "'"+String(value).replace(/'/g,"''")+"'";}
+function buildAiNovaMappingQuery(novaSemanticView,mapping){
+  const values=mapping.values.map(sqlLiteral).join(',');
+  return 'SELECT * FROM SEMANTIC_VIEW(\n  '+novaSemanticView+'\n  METRICS nova.total_po_value_usd,\n          nova.delayed_po_value_usd,\n          nova.delayed_po_count,\n          nova.outstanding_quantity,\n          nova.minimum_days_of_cover,\n          nova.weather_linked_po_value_usd,\n          nova.high_operational_risk_po_value_usd,\n          nova.average_market_sea_dependency_pct\n  DIMENSIONS nova.supplier_name,\n             nova.origin_country,\n             nova.material_name,\n             nova.hs4_code,\n             nova.commodity_group,\n             nova.plant_name,\n             nova.supplier_criticality,\n             nova.material_criticality,\n             nova.weather_risk_level,\n             nova.operational_risk_level,\n             nova.inventory_risk_level,\n             nova.marketplace_match_status\n  WHERE nova.marketplace_match_status = \'MATCHED\'\n    AND '+mapping.target+' IN ('+values+')\n)\nORDER BY HIGH_OPERATIONAL_RISK_PO_VALUE_USD DESC, DELAYED_PO_VALUE_USD DESC, WEATHER_LINKED_PO_VALUE_USD DESC, TOTAL_PO_VALUE_USD DESC, MINIMUM_DAYS_OF_COVER ASC\nLIMIT 40';
+}
+function compactAiResult(result,limit){
+  const cols=(result&&result.columns||[]).slice(0,18);
+  const rows=(result&&result.rows||[]).slice(0,limit||18).map(function(row){
+    return Object.fromEntries(cols.map(function(c){return [c,row&&row[c]];}));
+  });
+  return {columns:cols,rows};
+}
+async function aiSynthesize(base,pat,model,input){
+  const schema={
+    type:'object',additionalProperties:false,
+    properties:{
+      answer:{type:'string'},
+      decision_implication:{type:'string'},
+      limitations:{type:'array',items:{type:'string'},maxItems:4}
+    },
+    required:['answer','decision_implication','limitations']
+  };
+  const system=[
+    'You are OntoTrail Intelligence, an executive supply-chain analyst.',
+    'Answer the user directly from the supplied governed evidence. Do not output a metric dump.',
+    'Use only supplied evidence. Distinguish Marketplace external context from Nova internal operational facts.',
+    'A shared country, HS4 or commodity mapping means potential relevance, not causation and not confirmed disruption.',
+    'Only describe confirmed operational disruption when internal data supports it. Otherwise describe monitoring priority, exposure, or potential vulnerability.',
+    'Suppress zero-value metrics unless a zero changes the conclusion.',
+    'Use 2 to 4 concise paragraphs: direct answer, strongest evidence, then decision implication.',
+    'Never invent a cause, forecast, supplier fact, event, or risk absent from the evidence.',
+    aiDomainContract()
+  ].join('\n');
+  const out=await cortexAiJson(base,pat,model,system,JSON.stringify(input),schema,1400);
+  out.combined_answer=[out.answer,out.decision_implication?('Decision implication: '+out.decision_implication):''].filter(Boolean).join('\n\n');
+  return out;
+}
+
+
 export default async function handler(req,res){
   if(req.method!=='POST'){res.setHeader('Allow','POST');return send(res,405,{error:'Method not allowed.'});}
   if(!readSession(req))return send(res,401,{error:'Authentication required.'});
