@@ -29,6 +29,127 @@ function normalizeRows(body){
 async function fetchWithTimeout(url,options={},timeoutMs=45000){
   const controller=new AbortController();
   const timer=setTimeout(()=>controller.abort(),timeoutMs);
+  try{return await fetch(url,{...options,signal:controller.signal});}
+  finally{clearTimeout(timer);}
+}
+async function executeSql(base,pat,warehouse,sql){
+  const response=await fetchWithTimeout(`${base}/api/v2/statements`,{method:'POST',headers:snowHeaders(pat),body:JSON.stringify({statement:sql,warehouse,timeout:30})},35000);
+  let body=await response.json().catch(()=>({}));
+  if(response.status===202&&body.statementHandle){
+    for(let i=0;i<10;i++){
+      await new Promise(r=>setTimeout(r,700));
+      const poll=await fetchWithTimeout(`${base}/api/v2/statements/${encodeURIComponent(body.statementHandle)}`,{headers:snowHeaders(pat)},12000);
+      body=await poll.json().catch(()=>({}));
+      if(poll.status===200)return normalizeRows(body);
+      if(poll.status!==202)throw Error(body.message||`SQL execution failed (${poll.status}).`);
+    }
+    throw Error('Snowflake query is still running. Please try again.');
+  }
+  if(!response.ok)throw Error(body.message||body.code||`SQL execution failed (${response.status}).`);
+  return normalizeRows(body);
+}
+
+export default async function handler(req,res){
+  if(req.method!=='POST'){res.setHeader('Allow','POST');return send(res,405,{error:'Method not allowed.'});}
+  if(!readSession(req))return send(res,401,{error:'Authentication required.'});
+
+  const pat=process.env.SNOWFLAKE_PAT;
+  const base=cleanBase(process.env.SNOWFLAKE_ACCOUNT_URL);
+  const tradeSemanticView=process.env.SNOWFLAKE_SEMANTIC_VIEW;
+  const novaSemanticView=process.env.SNOWFLAKE_NOVA_SEMANTIC_VIEW||'ONTOTRAIL.SUPPLY_CHAIN.ONTOTRAIL_NOVA_MOBILITY_ANALYST';
+  const warehouse=process.env.SNOWFLAKE_WAREHOUSE;
+  if(!pat||!base||!tradeSemanticView||!warehouse)return send(res,500,{error:'OntoTrail AI is not fully configured.'});
+
+  const question=String(req.body?.question||'').trim();
+  if(!question||question.length>MAX_QUESTION)return send(res,400,{error:`Enter a question between 1 and ${MAX_QUESTION} characters.`});
+  const rawContext=req.body?.context&&typeof req.body.context==='object'?req.body.context:null;
+  const previousQuestion=String(rawContext?.previousQuestion||'').trim().slice(0,500);
+  const previousAnswer=String(rawContext?.previousAnswer||'').trim().slice(0,1200);
+  const previousGrounding=String(rawContext?.previousGrounding||'').trim().slice(0,320);
+  const previousResult=rawContext?.previousResult&&typeof rawContext.previousResult==='object'?rawContext.previousResult:null;
+  const previousRows=Array.isArray(previousResult?.result?.rows)?previousResult.result.rows.slice(0,12):[];
+  const previousColumns=Array.isArray(previousResult?.result?.columns)?previousResult.result.columns.slice(0,16):[];
+  const previousPlan=previousResult?.queryPlan&&typeof previousResult.queryPlan==='object'?previousResult.queryPlan:null;
+  const hasFollowupContext=Boolean(previousQuestion||previousAnswer||previousRows.length||previousPlan);
+  const plan=resolveQuestionPlan(question,{previousQuestion,previousPlan,hasRows:previousRows.length>0});
+
+  if(plan.type==='needs_context'){
+    return send(res,200,{
+      source:'ontotrail-conversation-router',
+      requestId:'needs-context',
+      semanticView:'',
+      semanticDomain:'conversation',
+      intents:['needs_context'],
+      datasetCoverage:{dimensions:0,metrics:0},
+      warehouse,
+      text:'I need the prior finding you want me to connect to Nova Mobility operations. Ask this as a follow-up in the same chat after a trade, transport, weather, supplier or material question.',
+      sql:'',
+      suggestions:[
+        'Which India imports are most dependent on sea transport in 2026?',
+        'Which origins have the highest elevated weather-risk trade exposure?',
+        'Which Nova suppliers have the highest operational risk?'
+      ],
+      result:null,
+      queryPlan:plan,
+      needsContext:true,
+      fallbackUsed:false,
+      followupContextUsed:false,
+      executionWarning:''
+    });
+  }
+
+  const followupSignal=/\b(this|that|these|those|it|they|them|affect|impact|follow[- ]?up|what about|how about|operations?|suppliers?|materials?|plants?|purchase orders?|shipments?)\b/i.test(question);
+  const classificationQuestion=hasFollowupContext&&followupSignal
+    ? `${previousQuestion}\nFOLLOW-UP: ${question}`
+    : question;
+
+  const classification=classifyQuestion(classificationQuestion);
+  const operationalFollowup=plan.type==='operational_impact_followup';
+  const domain=plan.domain||classification.domain;
+  let intents=classification.intents;
+  if(operationalFollowup&&!intents.some(x=>x.id==='cross_domain')){
+    const cross=classifyQuestion(`${previousQuestion}\nFOLLOW-UP: Nova operations ${question}`).intents.find(x=>x.id==='cross_domain');
+    if(cross)intents=[cross,...intents];
+  }
+  const profile=DATASET_DOMAINS[domain]||DATASET_DOMAINS.trade;
+  const semanticView=domain==='nova'
+    ? (novaSemanticView||profile.defaultSemanticView)
+    : (tradeSemanticView||profile.defaultSemanticView);
+  const rowIntent=/\b(rest of world|row)\b/i.test(classificationQuestion);
+  const rowGuidance=rowIntent
+    ? "Governed ROW rule: Rest of World/ROW is ORIGIN_ISO = 'ROW'. Filter that aggregate directly. Do not substitute a ranking of other countries. Only report weather for ROW when aggregate-row weather coverage exists."
+    : "";
+  const datasetGuidance=buildDatasetGuidance(classificationQuestion,domain,intents);
+  const dependencyGuidance=plan.type==='transport_dependency_ranking'
+    ? [
+        'STRICT TRANSPORT DEPENDENCY RULE',
+        `The user is asking for ${plan.mode} dependency, not absolute ${plan.mode} trade value.`,
+        `Rank by ${plan.metric} ${plan.order==='asc'?'ascending':'descending'}.`,
+        `Use ${plan.valueMetric} only as secondary exposure context.`,
+        plan.direction?`Apply TRADE_DIRECTION = ${plan.direction}.`:'',
+        plan.year?`Apply TRADE_YEAR = ${plan.year}.`:'',
+        plan.grain==='origin'?'Use origin country as the ranking dimension.':'Use a business-readable commodity heading plus HS4 for traceability.'
+      ].filter(Boolean).join('\n')
+    : '';
+  const conversationContext=hasFollowupContext
+    ? [
+        'ONTO TRAIL CONVERSATION CONTEXT',
+        previousQuestion?`Previous user question: ${previousQuestion}`:'',
+        previousAnswer?`Previous governed answer: ${previousAnswer}`:'',
+        previousGrounding?`Previous grounding: ${previousGrounding}`:'',
+        'Interpret the current question as a follow-up to the previous turn. In this workspace, phrases such as "our operations" refer to Nova Mobility operations. Preserve the earlier external finding as context, then test it against Nova suppliers, materials, purchase orders, plants, shipments and inventory. Only claim an operational impact where the current Nova semantic view has governed evidence. If there is no direct mapping, say so explicitly instead of returning an empty or fabricated answer.'
+      ].filter(Boolean).join('\n')
+    : '';
+  const governedQuestion=[
+    question,
+    conversationContext,
+    dependencyGuidance,
+    "",
+    "ONTO TRAIL GOVERNED DATASET INSTRUCTIONS",
+    datasetGuidance,
+    rowGuidance
+  ].filter(Boolean).join("\n");
+
   try{
     if(plan.type==='transport_dependency_ranking'&&plan.year&&plan.direction){
       const semanticMetric={
@@ -100,6 +221,7 @@ LIMIT 10`;
           executionWarning:''
         });
       }
+
       const novaSql=`SELECT * FROM SEMANTIC_VIEW(
   ${novaSemanticView}
   METRICS nova.total_po_value_usd,
