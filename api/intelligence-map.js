@@ -83,7 +83,7 @@ const INTENTS = [
   {id:'supplier_risk', domain:'nova', re:/\b(suppliers?|vendors?|tier 1|tier 2)\b/i,
     dimensions:['SUPPLIER_NAME','SUPPLIER_TIER','SUPPLIER_CRITICALITY','ORIGIN_COUNTRY','OPERATIONAL_RISK_LEVEL'], metrics:['TOTAL_PO_VALUE_USD','DELAYED_PO_COUNT','DELAYED_PO_VALUE_USD','MINIMUM_DAYS_OF_COVER','HIGH_OPERATIONAL_RISK_PO_VALUE_USD','WEATHER_LINKED_PO_VALUE_USD'],
     guidance:'Assess supplier risk using exposure, delay status, inventory cover and external risk together; do not rank on PO value alone unless asked.'},
-  {id:'cross_domain', domain:'nova', re:/\b(nova|suppliers?|vendors?|materials?|components?|plants?|purchase[- ]orders?|pos?)\b.*\b(weather|trade|sea dependency|marketplace|external|country risk|origin risk)\b|\b(weather|trade|sea dependency|marketplace|external|country risk|origin risk)\b.*\b(nova|suppliers?|vendors?|materials?|components?|plants?|purchase[- ]orders?|pos?)\b/i,
+  {id:'cross_domain', domain:'nova', re:/\b(nova|operations?|operational|suppliers?|vendors?|materials?|components?|plants?|purchase[- ]orders?|pos?|shipments?|inventory)\b.*\b(weather|trade|sea dependency|marketplace|external|country risk|origin risk|sea transport)\b|\b(weather|trade|sea dependency|marketplace|external|country risk|origin risk|sea transport)\b.*\b(nova|operations?|operational|suppliers?|vendors?|materials?|components?|plants?|purchase[- ]orders?|pos?|shipments?|inventory)\b/i,
     dimensions:['SUPPLIER_NAME','MATERIAL_NAME','PLANT_NAME','ORIGIN_COUNTRY','WEATHER_RISK_LEVEL','MARKETPLACE_MATCH_STATUS'], metrics:['TOTAL_PO_VALUE_USD','WEATHER_LINKED_PO_VALUE_USD','AVERAGE_MARKET_SEA_DEPENDENCY_PCT','MINIMUM_DAYS_OF_COVER','DELAYED_PO_VALUE_USD'],
     guidance:'Bridge internal Nova operational exposure with external Marketplace context. Start with the internal supplier/material/PO/plant exposure, then explain the linked origin-country trade dependency or weather signal. Keep internal operational facts and external context clearly distinguished.'},
   {id:'nova_weather_risk', domain:'nova', re:/\b(weather|storm|flood|external weather|weather-linked)\b/i,
@@ -112,7 +112,7 @@ const INTENTS = [
 export function classifyQuestion(question=''){
   const q=String(question||'').trim();
   const matched=INTENTS.filter(x=>x.re.test(q));
-  const opsSignal=/\b(nova|suppliers?|vendors?|purchase[- ]orders?|pos?|inventory|stock|shipments?|materials?|components?|plants?|factor(?:y|ies)|days? of cover|operational risk)\b/i.test(q);
+  const opsSignal=/\b(nova|operations?|operational|suppliers?|vendors?|purchase[- ]orders?|pos?|inventory|stock|shipments?|materials?|components?|plants?|factor(?:y|ies)|days? of cover|operational risk)\b/i.test(q);
   const tradeSignal=/\b(india|import|export|trade|country|china|origin|commodity|hs4|sea dependency|air dependency|weather coverage)\b/i.test(q);
   let domain='trade';
   if(opsSignal)domain='nova';
