@@ -189,7 +189,15 @@ export function resolveQuestionPlan(question='',context={}){
   if(operationalFollowup&&hasContext){
     const inheritedMode=previousPlan?.mode||
       (/\b(sea|maritime|ocean)\b/i.test(previousQuestion)?'sea':/\bair\b/i.test(previousQuestion)?'air':/\b(land|road|rail)\b/i.test(previousQuestion)?'land':null);
-    return {type:'operational_impact_followup',domain:'nova',mode:inheritedMode,previousPlan};
+    const previousIntents=Array.isArray(context?.previousIntents)?context.previousIntents:[];
+    const previousColumns=Array.isArray(context?.previousColumns)?context.previousColumns:[];
+    const signal=
+      previousPlan?.signal||
+      (inheritedMode?'transport':
+       previousIntents.some(x=>String(x).includes('weather'))||/\b(weather|storm|flood|climate)\b/i.test(previousQuestion)||previousColumns.some(c=>/WEATHER_/i.test(String(c)))?'weather':
+       previousIntents.some(x=>String(x).includes('trade'))||/\b(import|export|trade|exposure|commodity|origin)\b/i.test(previousQuestion)?'trade':
+       'operational');
+    return {type:'operational_impact_followup',domain:'nova',signal,mode:inheritedMode,previousPlan};
   }
 
   return {type:'semantic_analyst'};
