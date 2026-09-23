@@ -1,5 +1,5 @@
 import {readSession} from '../lib/auth.js';
-import {DATASET_DOMAINS,classifyQuestion,buildDatasetGuidance} from './intelligence-map.js';
+import {DATASET_DOMAINS,classifyQuestion,buildDatasetGuidance,resolveQuestionPlan} from './intelligence-map.js';
 const MAX_QUESTION=500;
 const headers={'Content-Type':'application/json','Cache-Control':'no-store'};
 
@@ -29,152 +29,77 @@ function normalizeRows(body){
 async function fetchWithTimeout(url,options={},timeoutMs=45000){
   const controller=new AbortController();
   const timer=setTimeout(()=>controller.abort(),timeoutMs);
-  try{return await fetch(url,{...options,signal:controller.signal});}
-  finally{clearTimeout(timer);}
-}
-async function executeSql(base,pat,warehouse,sql){
-  const response=await fetchWithTimeout(`${base}/api/v2/statements`,{method:'POST',headers:snowHeaders(pat),body:JSON.stringify({statement:sql,warehouse,timeout:30})},35000);
-  let body=await response.json().catch(()=>({}));
-  if(response.status===202&&body.statementHandle){
-    for(let i=0;i<10;i++){
-      await new Promise(r=>setTimeout(r,700));
-      const poll=await fetchWithTimeout(`${base}/api/v2/statements/${encodeURIComponent(body.statementHandle)}`,{headers:snowHeaders(pat)},12000);
-      body=await poll.json().catch(()=>({}));
-      if(poll.status===200)return normalizeRows(body);
-      if(poll.status!==202)throw Error(body.message||`SQL execution failed (${poll.status}).`);
-    }
-    throw Error('Snowflake query is still running. Please try again.');
-  }
-  if(!response.ok)throw Error(body.message||body.code||`SQL execution failed (${response.status}).`);
-  return normalizeRows(body);
-}
-
-export default async function handler(req,res){
-  if(req.method!=='POST'){res.setHeader('Allow','POST');return send(res,405,{error:'Method not allowed.'});}
-  if(!readSession(req))return send(res,401,{error:'Authentication required.'});
-
-  const pat=process.env.SNOWFLAKE_PAT;
-  const base=cleanBase(process.env.SNOWFLAKE_ACCOUNT_URL);
-  const tradeSemanticView=process.env.SNOWFLAKE_SEMANTIC_VIEW;
-  const novaSemanticView=process.env.SNOWFLAKE_NOVA_SEMANTIC_VIEW||'ONTOTRAIL.SUPPLY_CHAIN.ONTOTRAIL_NOVA_MOBILITY_ANALYST';
-  const warehouse=process.env.SNOWFLAKE_WAREHOUSE;
-  if(!pat||!base||!tradeSemanticView||!warehouse)return send(res,500,{error:'OntoTrail AI is not fully configured.'});
-
-  const question=String(req.body?.question||'').trim();
-  if(!question||question.length>MAX_QUESTION)return send(res,400,{error:`Enter a question between 1 and ${MAX_QUESTION} characters.`});
-  const rawContext=req.body?.context&&typeof req.body.context==='object'?req.body.context:null;
-  const previousQuestion=String(rawContext?.previousQuestion||'').trim().slice(0,500);
-  const previousAnswer=String(rawContext?.previousAnswer||'').trim().slice(0,1200);
-  const previousGrounding=String(rawContext?.previousGrounding||'').trim().slice(0,320);
-  const previousResult=rawContext?.previousResult&&typeof rawContext.previousResult==='object'?rawContext.previousResult:null;
-  const previousRows=Array.isArray(previousResult?.result?.rows)?previousResult.result.rows.slice(0,12):[];
-  const previousColumns=Array.isArray(previousResult?.result?.columns)?previousResult.result.columns.slice(0,16):[];
-  const hasFollowupContext=Boolean(previousQuestion||previousAnswer||previousRows.length);
-  const followupSignal=/\b(this|that|these|those|it|they|them|affect|impact|follow[- ]?up|what about|how about|operations?|suppliers?|materials?|plants?|purchase orders?|shipments?)\b/i.test(question);
-  const classificationQuestion=hasFollowupContext&&followupSignal
-    ? `${previousQuestion}\nFOLLOW-UP: ${question}`
-    : question;
-
-  const classification=classifyQuestion(classificationQuestion);
-  const operationalFollowup=hasFollowupContext&&/\b(our\s+operations?|operations?|operationally|suppliers?|vendors?|materials?|components?|plants?|purchase[- ]orders?|pos?|shipments?|inventory)\b/i.test(question);
-  const domain=operationalFollowup?'nova':classification.domain;
-  let intents=classification.intents;
-  if(operationalFollowup&&!intents.some(x=>x.id==='cross_domain')){
-    const cross=classifyQuestion(`${previousQuestion}\nFOLLOW-UP: Nova operations ${question}`).intents.find(x=>x.id==='cross_domain');
-    if(cross)intents=[cross,...intents];
-  }
-  const profile=DATASET_DOMAINS[domain]||DATASET_DOMAINS.trade;
-  const semanticView=domain==='nova'
-    ? (novaSemanticView||profile.defaultSemanticView)
-    : (tradeSemanticView||profile.defaultSemanticView);
-  const rowIntent=/\b(rest of world|row)\b/i.test(classificationQuestion);
-  const rowGuidance=rowIntent
-    ? "Governed ROW rule: Rest of World/ROW is ORIGIN_ISO = 'ROW'. Filter that aggregate directly. Do not substitute a ranking of other countries. Only report weather for ROW when aggregate-row weather coverage exists."
-    : "";
-  const datasetGuidance=buildDatasetGuidance(classificationQuestion,domain,intents);
-  const seaDependencyRankIntent=domain==='trade'&&(
-    /\bmost\s+dependent\s+on\s+sea\b/i.test(question)||
-    /\bhighest\s+sea\s+dependenc/i.test(question)||
-    /\bsea[- ]dependent\b/i.test(question)||
-    /\bdependent\s+on\s+sea\s+transport\b/i.test(question)
-  );
-  const canonicalSeaDependency2026=seaDependencyRankIntent&&/\bindia\b/i.test(question)&&/\b2026\b/.test(question)&&/\bimports?\b/i.test(question);
-  const dependencyGuidance=seaDependencyRankIntent
-    ? [
-        'STRICT TRANSPORT DEPENDENCY RULE',
-        'The user is asking for dependency, not absolute sea trade value.',
-        'Rank the relevant India import commodity/origin rows by SEA_DEPENDENCY_PCT descending.',
-        'Do NOT rank by TOTAL_SEA_TRADE_VALUE_USD.',
-        'Return SEA_DEPENDENCY_PCT in the result and include IMPORT_VALUE_USD as secondary context when available.',
-        'Apply TRADE_DIRECTION = IMPORT and the requested TRADE_YEAR.',
-        'Use a business-readable commodity dimension such as COMMODITY_CHAPTER or COMMODITY_HEADING when the user asks which imports.'
-      ].join('\n')
-    : '';
-  const conversationContext=hasFollowupContext
-    ? [
-        'ONTO TRAIL CONVERSATION CONTEXT',
-        previousQuestion?`Previous user question: ${previousQuestion}`:'',
-        previousAnswer?`Previous governed answer: ${previousAnswer}`:'',
-        previousGrounding?`Previous grounding: ${previousGrounding}`:'',
-        'Interpret the current question as a follow-up to the previous turn. In this workspace, phrases such as "our operations" refer to Nova Mobility operations. Preserve the earlier external finding as context, then test it against Nova suppliers, materials, purchase orders, plants, shipments and inventory. Only claim an operational impact where the current Nova semantic view has governed evidence. If there is no direct mapping, say so explicitly instead of returning an empty or fabricated answer.'
-      ].filter(Boolean).join('\n')
-    : '';
-  const governedQuestion=[
-    question,
-    conversationContext,
-    dependencyGuidance,
-    "",
-    "ONTO TRAIL GOVERNED DATASET INSTRUCTIONS",
-    datasetGuidance,
-    rowGuidance
-  ].filter(Boolean).join("\n");
-
   try{
-    // Canonical benchmark question: make the answer deterministic instead of relying on generated SQL.
-    if(canonicalSeaDependency2026){
-      const canonicalSql=`SELECT * FROM SEMANTIC_VIEW(
+    if(plan.type==='transport_dependency_ranking'&&plan.year&&plan.direction){
+      const semanticMetric={
+        SEA_DEPENDENCY_PCT:'trade_risk.sea_dependency_pct',
+        AIR_DEPENDENCY_PCT:'trade_risk.air_dependency_pct',
+        LAND_DEPENDENCY_PCT:'trade_risk.land_dependency_pct'
+      }[plan.metric];
+      const semanticValueMetric=plan.direction==='EXPORT'?'trade_risk.export_value_usd':'trade_risk.import_value_usd';
+      const dims=plan.grain==='origin'
+        ? ['trade_risk.origin_iso','trade_risk.origin_country','trade_risk.trade_year','trade_risk.trade_direction']
+        : ['trade_risk.hs4_code','trade_risk.commodity_heading','trade_risk.trade_year','trade_risk.trade_direction'];
+      const traceAlias=plan.grain==='origin'?'ORIGIN_ISO':'HS4_CODE';
+      const orderDir=plan.order==='asc'?'ASC':'DESC';
+      const deterministicSql=`SELECT * FROM SEMANTIC_VIEW(
   ${tradeSemanticView}
-  METRICS trade_risk.sea_dependency_pct,
-          trade_risk.import_value_usd
-  DIMENSIONS trade_risk.hs4_code,
-             trade_risk.commodity_heading,
-             trade_risk.trade_year,
-             trade_risk.trade_direction
-  WHERE trade_risk.trade_year = 2026
-    AND trade_risk.trade_direction = 'IMPORT'
+  METRICS ${semanticMetric},
+          ${semanticValueMetric}
+  DIMENSIONS ${dims.join(',\n             ')}
+  WHERE trade_risk.trade_year = ${Number(plan.year)}
+    AND trade_risk.trade_direction = '${plan.direction}'
 )
-ORDER BY SEA_DEPENDENCY_PCT DESC, IMPORT_VALUE_USD DESC, HS4_CODE ASC
+ORDER BY ${plan.metric} ${orderDir}, ${plan.valueMetric} DESC, ${traceAlias} ASC
 LIMIT 10`;
-      const result=await executeSql(base,pat,warehouse,canonicalSql);
+      const result=await executeSql(base,pat,warehouse,deterministicSql);
       return send(res,200,{
-        source:'snowflake-governed-canonical',
-        requestId:'canonical-sea-dependency-2026',
+        source:'snowflake-governed-plan',
+        requestId:`transport-dependency-${plan.mode}-${plan.year}-${plan.direction.toLowerCase()}`,
         semanticView:tradeSemanticView,
         semanticDomain:'india-trade-risk',
         intents:['transport_dependency'],
-        datasetCoverage:{dimensions:profile.dimensions.length,metrics:profile.metrics.length},
+        datasetCoverage:{dimensions:DATASET_DOMAINS.trade.dimensions.length,metrics:DATASET_DOMAINS.trade.metrics.length},
         warehouse,
-        text:'Canonical governed ranking by SEA_DEPENDENCY_PCT.',
-        sql:canonicalSql,
+        text:`Governed ${plan.mode}-dependency ranking using ${plan.metric}.`,
+        sql:deterministicSql,
         suggestions:[
           'How will this affect our operations?',
-          'Which of these HS4 imports map to Nova Mobility materials?',
-          'Which of these sea-dependent imports have the highest import value?'
+          plan.grain==='origin'?'Which commodities drive these origins?':'Which of these categories have the largest import exposure?',
+          'Show the corresponding transport dependency and exposure together.'
         ],
         result,
+        queryPlan:plan,
         fallbackUsed:false,
         followupContextUsed:hasFollowupContext,
         executionWarning:''
       });
     }
 
-    // Deterministic cross-domain handoff: translate the prior national sea-dependency signal
-    // into Nova's own matched supplier/material exposure rather than requiring the prior top-10 HS4 list to overlap.
-    const priorWasSeaDependency=operationalFollowup&&(
-      /\bsea\b/i.test(previousQuestion)||
-      previousColumns.some(c=>/SEA_DEPENDENCY_PCT/i.test(String(c)))
-    );
-    if(priorWasSeaDependency){
+    if(plan.type==='operational_impact_followup'&&plan.mode){
+      if(plan.mode!=='sea'){
+        return send(res,200,{
+          source:'snowflake-governed-cross-domain',
+          requestId:`operational-impact-${plan.mode}-limitation`,
+          semanticView:novaSemanticView,
+          semanticDomain:'nova-operations',
+          intents:['cross_domain'],
+          datasetCoverage:{dimensions:DATASET_DOMAINS.nova.dimensions.length,metrics:DATASET_DOMAINS.nova.metrics.length},
+          warehouse,
+          text:`The current Nova semantic layer does not expose an external ${plan.mode}-dependency metric, so I cannot quantify that cross-domain impact without extending the governed model. I can still analyze Nova operational risk independently.`,
+          sql:'',
+          suggestions:[
+            'Which Nova suppliers have the highest operational risk?',
+            'Which materials have the lowest inventory cover?',
+            'Which purchase orders are delayed?'
+          ],
+          result:null,
+          queryPlan:plan,
+          fallbackUsed:false,
+          followupContextUsed:true,
+          executionWarning:''
+        });
+      }
       const novaSql=`SELECT * FROM SEMANTIC_VIEW(
   ${novaSemanticView}
   METRICS nova.total_po_value_usd,
@@ -201,22 +126,23 @@ LIMIT 25`;
       const result=await executeSql(base,pat,warehouse,novaSql);
       return send(res,200,{
         source:'snowflake-governed-cross-domain',
-        requestId:'canonical-sea-to-nova-operations',
+        requestId:'operational-impact-sea',
         semanticView:novaSemanticView,
         semanticDomain:'nova-operations',
         intents:['cross_domain','supplier_risk','material_risk'],
         datasetCoverage:{dimensions:DATASET_DOMAINS.nova.dimensions.length,metrics:DATASET_DOMAINS.nova.metrics.length},
         warehouse,
         text:result?.rows?.length
-          ? 'Translated the prior India sea-dependency signal into Nova Mobility supplier and material exposure using Marketplace-matched operational records.'
-          : 'Nova Mobility currently has no Marketplace-matched operational records for this external sea-dependency signal.',
+          ? 'Mapped the prior external sea-dependency signal into Marketplace-matched Nova operational exposure.'
+          : 'Nova Mobility currently has no Marketplace-matched operational rows for this external signal.',
         sql:novaSql,
         suggestions:[
-          'Which of these matched materials have the lowest inventory cover?',
+          'Which matched materials have the lowest inventory cover?',
           'Which matched suppliers also have delayed PO exposure?',
-          'Which plants are most exposed to these sea-dependent materials?'
+          'Which plants are most exposed to these matched materials?'
         ],
         result,
+        queryPlan:{...plan,type:'operational_impact',mode:'sea'},
         fallbackUsed:false,
         followupContextUsed:true,
         executionWarning:''
@@ -247,47 +173,6 @@ LIMIT 25`;
     if(sql){
       try{result=await executeSql(base,pat,warehouse,sql);}
       catch(err){executionWarning=err.message||'The generated SQL could not be executed.';}
-    }
-
-    const resultColumns=(result?.columns||[]).map(c=>String(c).toUpperCase());
-    const needsSeaDependencyRetry=seaDependencyRankIntent&&result?.rows?.length&&!resultColumns.some(c=>c.includes('SEA_DEPENDENCY_PCT'));
-    if(needsSeaDependencyRetry){
-      const retryQuestion=[
-        question,
-        '',
-        'ONTO TRAIL TRANSPORT DEPENDENCY RETRY',
-        'The prior result did not return SEA_DEPENDENCY_PCT, so it cannot answer a dependency-ranking question correctly.',
-        'Return COMMODITY_CHAPTER or COMMODITY_HEADING, SEA_DEPENDENCY_PCT, and IMPORT_VALUE_USD for India imports in the requested year.',
-        'Order by SEA_DEPENDENCY_PCT descending. Do not order by TOTAL_SEA_TRADE_VALUE_USD.',
-        datasetGuidance
-      ].join('\n');
-      try{
-        const retry=await fetchWithTimeout(`${base}/api/v2/cortex/analyst/message`,{
-          method:'POST',
-          headers:snowHeaders(pat),
-          body:JSON.stringify({
-            messages:[{role:'user',content:[{type:'text',text:retryQuestion}]}],
-            semantic_view:semanticView,
-            stream:false
-          })
-        },50000);
-        const retryBody=await retry.json().catch(()=>({}));
-        if(retry.ok){
-          const retryParsed=normalizeAnalyst(retryBody);
-          const retrySql=safeSelect(retryParsed.sql);
-          if(retrySql){
-            const retryResult=await executeSql(base,pat,warehouse,retrySql);
-            const retryCols=(retryResult?.columns||[]).map(c=>String(c).toUpperCase());
-            if(retryResult?.rows?.length&&retryCols.some(c=>c.includes('SEA_DEPENDENCY_PCT'))){
-              parsed=retryParsed;
-              sql=retrySql;
-              result=retryResult;
-              fallbackUsed=true;
-              executionWarning='';
-            }
-          }
-        }
-      }catch{}
     }
 
     const needsCrossDomainFallback=domain==='nova'&&
@@ -396,6 +281,7 @@ LIMIT 25`;
       sql:sql||'',
       suggestions:parsed.suggestions,
       result,
+      queryPlan:plan,
       fallbackUsed,
       followupContextUsed:hasFollowupContext,
       executionWarning
