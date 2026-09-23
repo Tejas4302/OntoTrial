@@ -73,8 +73,13 @@ export default async function handler(req,res){
     : question;
 
   const classification=classifyQuestion(classificationQuestion);
-  const domain=classification.domain;
-  const intents=classification.intents;
+  const operationalFollowup=hasFollowupContext&&/\b(our\s+operations?|operations?|operationally|suppliers?|vendors?|materials?|components?|plants?|purchase[- ]orders?|pos?|shipments?|inventory)\b/i.test(question);
+  const domain=operationalFollowup?'nova':classification.domain;
+  let intents=classification.intents;
+  if(operationalFollowup&&!intents.some(x=>x.id==='cross_domain')){
+    const cross=classifyQuestion(`${previousQuestion}\nFOLLOW-UP: Nova operations ${question}`).intents.find(x=>x.id==='cross_domain');
+    if(cross)intents=[cross,...intents];
+  }
   const profile=DATASET_DOMAINS[domain]||DATASET_DOMAINS.trade;
   const semanticView=domain==='nova'
     ? (novaSemanticView||profile.defaultSemanticView)
@@ -107,7 +112,7 @@ export default async function handler(req,res){
         previousQuestion?`Previous user question: ${previousQuestion}`:'',
         previousAnswer?`Previous governed answer: ${previousAnswer}`:'',
         previousGrounding?`Previous grounding: ${previousGrounding}`:'',
-        'Interpret the current question as a follow-up to the previous turn. Preserve the earlier finding as context, but only claim an operational impact where the current semantic view has governed evidence. If there is no direct Nova mapping, say so explicitly instead of returning an empty or fabricated answer.'
+        'Interpret the current question as a follow-up to the previous turn. In this workspace, phrases such as "our operations" refer to Nova Mobility operations. Preserve the earlier external finding as context, then test it against Nova suppliers, materials, purchase orders, plants, shipments and inventory. Only claim an operational impact where the current Nova semantic view has governed evidence. If there is no direct mapping, say so explicitly instead of returning an empty or fabricated answer.'
       ].filter(Boolean).join('\n')
     : '';
   const governedQuestion=[
