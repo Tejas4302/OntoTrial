@@ -295,6 +295,24 @@ function analystNarrative(question,result,cortexText=''){
    }
   }
  }
+ const crossDomainWeatherIntent=/\b(nova|supplier|vendor|material|component|plant|po|purchase order)\b/i.test(q)&&/\b(weather|external|marketplace|country risk|sea dependency)\b/i.test(q);
+ if(crossDomainWeatherIntent&&m.rows.length){
+  const cols=m.columns.map(c=>String(c));const find=(patterns)=>cols.find(c=>{const u=c.toUpperCase();return patterns.some(p=>p.test(u));});
+  const supplierCol=find([/SUPPLIER_NAME/,/VENDOR_NAME/]),materialCol=find([/MATERIAL_NAME/]),plantCol=find([/PLANT_NAME/]),originCol=find([/ORIGIN_COUNTRY/]),weatherCol=find([/WEATHER_RISK_LEVEL/]),matchCol=find([/MARKETPLACE_MATCH_STATUS/]);
+  const poValueCol=find([/TOTAL_PO_VALUE_USD/,/^PO_VALUE_USD$/]),weatherValueCol=find([/WEATHER_LINKED_PO_VALUE_USD/]),coverCol=find([/MINIMUM_DAYS_OF_COVER/]),seaCol=find([/AVERAGE_MARKET_SEA_DEPENDENCY_PCT/]),delayedCol=find([/DELAYED_PO_VALUE_USD/]);
+  const entityCol=supplierCol||materialCol||plantCol||originCol||m.dimension;
+  if(entityCol){
+   const rows=[...m.rows].sort((a,b)=>(analystNumber(b[weatherValueCol])||0)-(analystNumber(a[weatherValueCol])||0)||(analystNumber(b[poValueCol])||0)-(analystNumber(a[poValueCol])||0));
+   const elevated=rows.filter(r=>(analystNumber(r[weatherValueCol])||0)>0||/MEDIUM|HIGH/i.test(String(r[weatherCol]||'')));
+   if(!elevated.length){
+    const matched=rows.filter(r=>!matchCol||/MATCHED/i.test(String(r[matchCol]||''))).slice(0,3);
+    const examples=matched.map(r=>{const bits=[];if(originCol&&r[originCol])bits.push(e(r[originCol]));if(poValueCol&&analystNumber(r[poValueCol])!==null)bits.push(analystFormat(poValueCol,r[poValueCol]));if(coverCol&&analystNumber(r[coverCol])!==null)bits.push(analystFormat(coverCol,r[coverCol]));if(seaCol&&analystNumber(r[seaCol])!==null)bits.push(`${analystFormat(seaCol,r[seaCol])} external sea dependency`);return `<strong>${e(r[entityCol])}</strong>${bits.length?` (${bits.join(' · ')})`:''}`;}).join(', ');
+    return `No Nova Mobility supplier in the returned governed evidence currently has <strong>elevated external weather-linked PO exposure</strong>. ${matched.length?`The largest matched operational exposures are ${examples}.`:''} External weather is contextual Marketplace intelligence; zero elevated exposure does not mean the supplier has no operational risk.`;
+   }
+   const leaders=elevated.slice(0,3).map(r=>{const bits=[];if(originCol&&r[originCol])bits.push(e(r[originCol]));if(weatherValueCol&&analystNumber(r[weatherValueCol])!==null)bits.push(`${analystFormat(weatherValueCol,r[weatherValueCol])} weather-linked PO value`);if(poValueCol&&analystNumber(r[poValueCol])!==null)bits.push(`${analystFormat(poValueCol,r[poValueCol])} total PO exposure`);if(weatherCol&&r[weatherCol])bits.push(`${e(r[weatherCol])} weather signal`);if(coverCol&&analystNumber(r[coverCol])!==null)bits.push(`${analystFormat(coverCol,r[coverCol])} minimum cover`);if(delayedCol&&analystNumber(r[delayedCol])!==null)bits.push(`${analystFormat(delayedCol,r[delayedCol])} delayed value`);if(seaCol&&analystNumber(r[seaCol])!==null)bits.push(`${analystFormat(seaCol,r[seaCol])} external sea dependency`);return `<strong>${e(r[entityCol])}</strong> (${bits.join(' · ')})`;}).join(', ');
+   return `The strongest overlap between Nova operational exposure and elevated external weather context is ${leaders}. Treat the weather signal as external Marketplace context and use the Nova PO, inventory and supplier metrics as the operational source of truth.`;
+  }
+ }
  const exposureIntent=/\b(import|export|trade)\b/i.test(q)&&/\b(exposure|dependenc|concentrat|risk|explain)\b/i.test(q);
  if(exposureIntent){
   const cols=m.columns.map(c=>String(c));const find=(patterns,exclude=[])=>cols.find(c=>{const u=c.toUpperCase();return patterns.some(p=>p.test(u))&&!exclude.some(p=>p.test(u));});
@@ -698,7 +716,7 @@ async function ask(q){
   const progressTimer2=setTimeout(()=>setAnalystProgress(answerEl,'Preparing the governed answer…',3),1500);
   const a=await askAnalyst(governedQuestion);clearTimeout(progressTimer1);clearTimeout(progressTimer2);setAnalystProgress(answerEl,'Preparing the governed answer…',3);const rid=`analyst-${Date.now()}`;const hasRows=Boolean(a.result?.rows?.length);const resultHtml=hasRows?`${analystFilters(a.result,rid)}${analystChart(a.result,rid,question)}${analystTable(a.result,rid)}`:'';
   const sql=a.sql?`<details class="analyst-sql"><summary>Audit trail · View generated SQL</summary><pre>${e(a.sql)}</pre></details>`:'';
-  const warning=a.executionWarning?`<p class="analyst-warning">${e(a.executionWarning)}</p>`:'';
+  const warning=(a.executionWarning||a.fallbackUsed)?`<p class="analyst-warning">${e(a.executionWarning||'OntoTrail broadened the first zero-row weather query so zero exposure and unavailable coverage could be distinguished from a true data failure.')}</p>`:'';
   const suggestions=a.suggestions?.length?`<div class="analyst-suggestions"><span>Explore next</span>${a.suggestions.map(s=>`<button type="button" data-question="${e(s)}">${e(s)}</button>`).join('')}</div>`:'';
   const narrative=analystNarrative(question,a.result||{columns:[],rows:[]},a.text||'');
   const rec=hasRows?recommendationFor(question,a.result):null;
