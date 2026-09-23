@@ -161,3 +161,35 @@ for(const tc of metricGovernanceQuestions){
     for(const token of tc.tokens)assert.match(g,new RegExp(token));
   });
 }
+
+
+const crossDomainQuestions=[
+  {
+    q:'Which Nova suppliers are most exposed to elevated external weather risk?',
+    must:['supplier_risk','cross_domain','nova_weather_risk'],
+    tokens:['SUPPLIER_NAME','WEATHER_LINKED_PO_VALUE_USD','AVERAGE_MARKET_SEA_DEPENDENCY_PCT']
+  },
+  {
+    q:'Which Nova materials depend on countries with high sea dependency?',
+    must:['cross_domain','material_risk'],
+    tokens:['MATERIAL_NAME','ORIGIN_COUNTRY','AVERAGE_MARKET_SEA_DEPENDENCY_PCT']
+  },
+  {
+    q:'Which plants have the most supplier exposure to external country risk?',
+    must:['cross_domain','plant_risk'],
+    tokens:['PLANT_NAME','SUPPLIER_NAME','ORIGIN_COUNTRY']
+  }
+];
+
+for(const tc of crossDomainQuestions){
+  test('cross-domain routing: '+tc.q,()=>{
+    const c=classifyQuestion(tc.q);
+    assert.equal(c.domain,'nova');
+    const ids=c.intents.map(x=>x.id);
+    for(const id of tc.must)assert.ok(ids.includes(id),`missing ${id}; got ${ids.join(', ')}`);
+    const g=buildDatasetGuidance(tc.q,c.domain,c.intents);
+    for(const token of tc.tokens)assert.match(g,new RegExp(token));
+    assert.match(g,/internal Nova operational exposure/i);
+    assert.match(g,/external Marketplace context/i);
+  });
+}
