@@ -142,3 +142,55 @@ export function buildDatasetGuidance(question,domain,intents=[]){
     'Do not restate the user question, query plan, or requested fields as the final answer. If governed rows are returned, synthesize the result into a business conclusion backed by those rows.'
   ].filter(Boolean).join('\n');
 }
+
+
+export function resolveQuestionPlan(question='',context={}){
+  const q=String(question||'').trim();
+  const previousQuestion=String(context?.previousQuestion||'').trim();
+  const previousPlan=context?.previousPlan&&typeof context.previousPlan==='object'?context.previousPlan:null;
+  const hasContext=Boolean(previousQuestion||previousPlan||context?.hasRows);
+
+  const deictic=/\b(this|that|these|those|it|they|them)\b/i.test(q);
+  const impact=/\b(affect|impact|implication|mean for|matter to|risk to|exposure to)\b/i.test(q);
+  const workspaceRef=/\b(us|our|operations?|business|supply chain|suppliers?|materials?|components?|plants?|inventory|purchase[- ]orders?|pos?|shipments?)\b/i.test(q);
+  const operationalFollowup=(impact&&workspaceRef)||(deictic&&workspaceRef);
+
+  if(operationalFollowup&&!hasContext){
+    return {type:'needs_context',reason:'operational_followup_without_prior_turn'};
+  }
+
+  const modeMatch=q.match(/\b(sea|maritime|ocean|air|airfreight|air freight|land|road|rail)\b/i);
+  const normalizedMode=modeMatch
+    ? (/sea|maritime|ocean/i.test(modeMatch[1])?'sea':/air/i.test(modeMatch[1])?'air':'land')
+    : null;
+  const dependencyLanguage=/\b(depend(?:ent|ency)?|reli(?:ance|ant|es|ed|y)|share|most dependent|least dependent|highest dependency|lowest dependency)\b/i.test(q);
+  const rankingLanguage=/\b(which|rank|top|most|highest|least|lowest|show|list)\b/i.test(q);
+  const yearMatch=q.match(/\b(20\d{2})\b/);
+  const direction=/\b(exports?|outbound)\b/i.test(q)?'EXPORT':/\b(imports?|inbound)\b/i.test(q)?'IMPORT':null;
+  const grain=/\b(countries|country|origins?|source countries?)\b/i.test(q)?'origin':'commodity';
+  const order=/\b(least|lowest|bottom)\b/i.test(q)?'asc':'desc';
+
+  if(normalizedMode&&dependencyLanguage&&rankingLanguage){
+    const metric={sea:'SEA_DEPENDENCY_PCT',air:'AIR_DEPENDENCY_PCT',land:'LAND_DEPENDENCY_PCT'}[normalizedMode];
+    const valueMetric=direction==='EXPORT'?'EXPORT_VALUE_USD':'IMPORT_VALUE_USD';
+    return {
+      type:'transport_dependency_ranking',
+      domain:'trade',
+      mode:normalizedMode,
+      metric,
+      valueMetric,
+      year:yearMatch?Number(yearMatch[1]):null,
+      direction,
+      grain,
+      order
+    };
+  }
+
+  if(operationalFollowup&&hasContext){
+    const inheritedMode=previousPlan?.mode||
+      (/\b(sea|maritime|ocean)\b/i.test(previousQuestion)?'sea':/\bair\b/i.test(previousQuestion)?'air':/\b(land|road|rail)\b/i.test(previousQuestion)?'land':null);
+    return {type:'operational_impact_followup',domain:'nova',mode:inheritedMode,previousPlan};
+  }
+
+  return {type:'semantic_analyst'};
+}
