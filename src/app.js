@@ -745,11 +745,14 @@ function analystFollowupContext(block){
  const previousQuestion=chatPairQuestion(prev).slice(0,500);
  const answer=prev.querySelector('.direct-answer')?.innerText?.trim()||'';
  const grounding=prev.querySelector('.assistant-answer small')?.innerText?.trim()||'';
- if(!previousQuestion&&!answer)return null;
+ let previousResult=null;
+ try{previousResult=prev.dataset.analystContext?JSON.parse(decodeURIComponent(prev.dataset.analystContext)):null;}catch{}
+ if(!previousQuestion&&!answer&&!previousResult)return null;
  return {
   previousQuestion,
   previousAnswer:answer.slice(0,1200),
-  previousGrounding:grounding.slice(0,320)
+  previousGrounding:grounding.slice(0,320),
+  previousResult
  };
 }
 async function ask(q){
@@ -763,7 +766,17 @@ async function ask(q){
   const progressTimer1=setTimeout(()=>setAnalystProgress(answerEl,'Querying Snowflake Cortex Analyst…',2),650);
   const progressTimer2=setTimeout(()=>setAnalystProgress(answerEl,'Preparing the governed answer…',3),1500);
   const followupContext=analystFollowupContext(block);
-  const a=await askAnalyst(governedQuestion,followupContext);clearTimeout(progressTimer1);clearTimeout(progressTimer2);setAnalystProgress(answerEl,'Preparing the governed answer…',3);const rid=`analyst-${Date.now()}`;const hasRows=Boolean(a.result?.rows?.length);const resultHtml=hasRows?`${analystFilters(a.result,rid)}${analystChart(a.result,rid,question)}${analystTable(a.result,rid)}`:'';
+  const a=await askAnalyst(governedQuestion,followupContext);
+  try{
+    const compactContext={
+      semanticDomain:a.semanticDomain||'',
+      semanticView:a.semanticView||'',
+      intents:(a.intents||[]).slice(0,8),
+      result:a.result?{columns:(a.result.columns||[]).slice(0,16),rows:(a.result.rows||[]).slice(0,12)}:null
+    };
+    block.dataset.analystContext=encodeURIComponent(JSON.stringify(compactContext));
+  }catch{}
+  clearTimeout(progressTimer1);clearTimeout(progressTimer2);setAnalystProgress(answerEl,'Preparing the governed answer…',3);const rid=`analyst-${Date.now()}`;const hasRows=Boolean(a.result?.rows?.length);const resultHtml=hasRows?`${analystFilters(a.result,rid)}${analystChart(a.result,rid,question)}${analystTable(a.result,rid)}`:'';
   const sql=a.sql?`<details class="analyst-sql"><summary>Audit trail · View generated SQL</summary><pre>${e(a.sql)}</pre></details>`:'';
   const warning=(a.executionWarning||a.fallbackUsed)?`<p class="analyst-warning">${e(a.executionWarning||'OntoTrail broadened the first zero-row cross-domain query so missing direct mappings can be distinguished from a true data failure.')}</p>`:'';
   const suggestions=a.suggestions?.length?`<div class="analyst-suggestions"><span>Explore next</span>${a.suggestions.map(s=>`<button type="button" data-question="${e(s)}">${e(s)}</button>`).join('')}</div>`:'';
