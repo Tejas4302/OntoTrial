@@ -874,10 +874,10 @@ async function ask(q){
   const warning=(a.executionWarning||a.fallbackUsed)?`<p class="analyst-warning">${e(a.executionWarning||'OntoTrail broadened the first zero-row cross-domain query so missing direct mappings can be distinguished from a true data failure.')}</p>`:'';
   const suggestions=a.suggestions?.length?`<div class="analyst-suggestions"><span>Explore next</span>${a.suggestions.map(s=>`<button type="button" data-question="${e(s)}">${e(s)}</button>`).join('')}</div>`:'';
   const narrative=analystNarrative(question,a.result||{columns:[],rows:[]},a.text||'',a);
-  const rec=hasRows?recommendationFor(question,a.result):null;
+  const rec=hasRows&&wantsRecommendation&&!a.aiOrchestrated?recommendationFor(question,a.result):null;
   const decisionSeed=rec?{title:rec.title,problem:block.querySelector('.user-question')?.textContent?narrative.replace(/<[^>]+>/g,''):'',action:rec.action,owner:rec.owner,priority:'High',status:'Assigned',expectedImpact:rec.expectedImpact,source:'Cortex Analyst'}:null;
   if(decisionSeed)decisionInsights.set(rid,decisionSeed);
-  const recHtml=rec&&(wantsRecommendation||/EXPOSURE|RISK|DELAY|SHORTAGE/i.test(question))?`<section class="recommendation-card"><span class="eyebrow">RECOMMENDED NEXT MOVE</span><h4>${e(rec.title)}</h4><p>${e(rec.action)}</p><div><span>Suggested owner</span><strong>${e(rec.owner)}</strong></div></section>`:'';
+  const recHtml=rec?`<section class="recommendation-card"><span class="eyebrow">RECOMMENDED NEXT MOVE</span><h4>${e(rec.title)}</h4><p>${e(rec.action)}</p><div><span>Suggested owner</span><strong>${e(rec.owner)}</strong></div></section>`:'';
   const investigateQuestion=buildInvestigateQuestion(question,a);
   const scenarioSeed=buildScenarioSeed(question,a,narrative);
   const decisionBrief=decisionSeed?encodeAnalystPayload({seed:decisionSeed,meta:{semanticView:a.semanticView,intents:a.intents||[],rows:a.result?.rows?.length||0}}):'';
