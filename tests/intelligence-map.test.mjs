@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import {classifyQuestion,DATASET_DOMAINS,buildDatasetGuidance} from '../api/intelligence-map.js';
+import {classifyQuestion,DATASET_DOMAINS,buildDatasetGuidance,resolveQuestionPlan} from '../api/intelligence-map.js';
 
 test('routes national trade questions to trade domain',()=>{
   const c=classifyQuestion('Explain India import exposure to China in 2026 including commodity concentration, sea dependency and weather risk');
@@ -193,3 +193,49 @@ for(const tc of crossDomainQuestions){
     assert.match(g,/external Marketplace context/i);
   });
 }
+
+
+test('transport dependency planner handles paraphrases consistently',()=>{
+  const cases=[
+    ['Which India imports are most dependent on sea transport in 2026?','sea','SEA_DEPENDENCY_PCT','commodity'],
+    ['Rank India inbound products by maritime reliance for 2026.','sea','SEA_DEPENDENCY_PCT','commodity'],
+    ['Show the countries India relies on most for air freight imports in 2026.','air','AIR_DEPENDENCY_PCT','origin'],
+    ['Which 2026 India imports have the highest land transport dependency?','land','LAND_DEPENDENCY_PCT','commodity']
+  ];
+  for(const [q,mode,metric,grain] of cases){
+    const p=resolveQuestionPlan(q,{});
+    assert.equal(p.type,'transport_dependency_ranking',q);
+    assert.equal(p.mode,mode,q);
+    assert.equal(p.metric,metric,q);
+    assert.equal(p.grain,grain,q);
+    assert.equal(p.year,2026,q);
+    assert.equal(p.direction,'IMPORT',q);
+  }
+});
+
+test('operational impact follow-up uses conversation context rather than exact wording',()=>{
+  const previousPlan={
+    type:'transport_dependency_ranking',
+    mode:'sea',
+    metric:'SEA_DEPENDENCY_PCT',
+    year:2026,
+    direction:'IMPORT',
+    grain:'commodity',
+    order:'desc'
+  };
+  for(const q of [
+    'How will this affect our operations?',
+    'What does this mean for us?',
+    'What is the impact on our supply chain?'
+  ]){
+    const p=resolveQuestionPlan(q,{previousQuestion:'Rank India imports by sea dependency in 2026',previousPlan,hasRows:true});
+    assert.equal(p.type,'operational_impact_followup',q);
+    assert.equal(p.domain,'nova',q);
+    assert.equal(p.mode,'sea',q);
+  }
+});
+
+test('context-dependent follow-up in a new chat asks for context',()=>{
+  const p=resolveQuestionPlan('How will this affect us?',{});
+  assert.equal(p.type,'needs_context');
+});
