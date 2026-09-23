@@ -97,17 +97,27 @@ function analystNarrative(question,result,cortexText=''){
  const seaDependencyRankIntent=/\bmost\s+dependent\s+on\s+sea\b/i.test(q)||/\bhighest\s+sea\s+dependenc/i.test(q)||/\bdependent\s+on\s+sea\s+transport\b/i.test(q);
  if(seaDependencyRankIntent){
   const cols=m.columns.map(c=>String(c));const find=(patterns)=>cols.find(c=>{const u=c.toUpperCase();return patterns.some(p=>p.test(u));});
-  const dim=find([/COMMODITY_CHAPTER/,/COMMODITY_HEADING/,/ORIGIN_COUNTRY/,/HS4/])||m.dimension;
+  const headingCol=find([/COMMODITY_HEADING/,/^HEADING$/]);
+  const chapterCol=find([/COMMODITY_CHAPTER/,/^CHAPTER$/]);
+  const hs4Col=find([/HS4_CODE/,/^HS4$/,/HS4_STR/]);
+  const dim=headingCol||chapterCol||find([/ORIGIN_COUNTRY/])||hs4Col||m.dimension;
   const sea=find([/SEA_DEPENDENCY_PCT/]);
   const valueCol=find([/^IMPORT_VALUE_USD$/, /TOTAL_NOMINAL_TRADE_VALUE_USD/]);
   if(dim&&sea){
-   const rows=[...m.rows].filter(r=>analystNumber(r[sea])!==null).sort((a,b)=>analystNumber(b[sea])-analystNumber(a[sea]));
+   const rows=[...m.rows].filter(r=>analystNumber(r[sea])!==null).sort((a,b)=>{
+    const d=analystNumber(b[sea])-analystNumber(a[sea]);
+    if(d!==0)return d;
+    return (analystNumber(b[valueCol])||0)-(analystNumber(a[valueCol])||0);
+   });
    if(rows.length){
     const leaders=rows.slice(0,5).map(r=>{
-      const label=/COMMODITY/i.test(String(dim))?analystCommodityLabel(r[dim]):String(r[dim]??'');
+      const rawLabel=String(r[dim]??'').trim();
+      const friendly=/COMMODITY|HEADING|CHAPTER/i.test(String(dim))?analystCommodityLabel(rawLabel):rawLabel;
+      const code=hs4Col&&String(r[hs4Col]??'').trim();
+      const label=(friendly||code||'Import category')+(code&&friendly&&code!==friendly?` <span class="muted-inline">(HS4 ${e(code)})</span>`:'');
       const bits=[`${analystFormat(sea,r[sea])} sea dependency`];
       if(valueCol&&analystNumber(r[valueCol])!==null)bits.push(`${analystFormat(valueCol,r[valueCol])} import value`);
-      return `<strong>${e(label)}</strong> (${bits.join(' · ')})`;
+      return `<strong>${label}</strong> (${bits.join(' · ')})`;
     }).join(', ');
     return `The most sea-dependent India imports in the returned 2026 data are ${leaders}. This ranking is based on <strong>SEA_DEPENDENCY_PCT</strong>—the share of import value carried by sea—not on absolute sea trade value.`;
    }
