@@ -329,6 +329,27 @@ function analystNarrative(question,result,cortexText=''){
    }
   }
  }
+ const operationalSeaFollowup=/\b(our\s+operations?|operations?|operationally|affect\s+us|impact\s+us)\b/i.test(q)&&m.columns.some(c=>/AVERAGE_MARKET_SEA_DEPENDENCY_PCT/i.test(String(c)));
+ if(operationalSeaFollowup&&m.rows.length){
+  const cols=m.columns.map(c=>String(c));const find=(patterns)=>cols.find(c=>{const u=c.toUpperCase();return patterns.some(p=>p.test(u));});
+  const supplierCol=find([/SUPPLIER_NAME/]),materialCol=find([/MATERIAL_NAME/]),originCol=find([/ORIGIN_COUNTRY/]),plantCol=find([/PLANT_NAME/]);
+  const seaCol=find([/AVERAGE_MARKET_SEA_DEPENDENCY_PCT/]),poValueCol=find([/TOTAL_PO_VALUE_USD/]),coverCol=find([/MINIMUM_DAYS_OF_COVER/]),delayedCol=find([/DELAYED_PO_VALUE_USD/]),riskCol=find([/OPERATIONAL_RISK_LEVEL/]);
+  const rows=[...m.rows].sort((a,b)=>(analystNumber(b[seaCol])||0)-(analystNumber(a[seaCol])||0)||(analystNumber(b[poValueCol])||0)-(analystNumber(a[poValueCol])||0));
+  const leaders=rows.slice(0,4).map(r=>{
+    const label=materialCol&&r[materialCol]?e(r[materialCol]):supplierCol&&r[supplierCol]?e(r[supplierCol]):'Matched exposure';
+    const bits=[];
+    if(supplierCol&&r[supplierCol]&&materialCol)bits.push(e(r[supplierCol]));
+    if(originCol&&r[originCol])bits.push(e(r[originCol]));
+    if(seaCol&&analystNumber(r[seaCol])!==null)bits.push(`${analystFormat(seaCol,r[seaCol])} external sea dependency`);
+    if(poValueCol&&analystNumber(r[poValueCol])!==null)bits.push(`${analystFormat(poValueCol,r[poValueCol])} PO exposure`);
+    if(coverCol&&analystNumber(r[coverCol])!==null)bits.push(`${analystFormat(coverCol,r[coverCol])} minimum cover`);
+    if(delayedCol&&analystNumber(r[delayedCol])>0)bits.push(`${analystFormat(delayedCol,r[delayedCol])} delayed`);
+    if(riskCol&&r[riskCol])bits.push(`${e(r[riskCol])} operational risk`);
+    if(plantCol&&r[plantCol])bits.push(e(r[plantCol]));
+    return `<strong>${label}</strong> (${bits.join(' · ')})`;
+  }).join(', ');
+  return `The India sea-dependency signal matters to Nova where it overlaps with our Marketplace-matched materials and suppliers. The strongest matched exposures are ${leaders}. Treat <strong>market sea dependency</strong> as external TradePrism context, not Nova's actual shipment-mode share; prioritize items where high external sea dependency overlaps with large PO exposure, low inventory cover or delayed supply.`;
+ }
  const crossDomainWeatherIntent=/\b(nova|supplier|vendor|material|component|plant|po|purchase order)\b/i.test(q)&&/\b(weather|external|marketplace|country risk|sea dependency)\b/i.test(q);
  if(crossDomainWeatherIntent&&m.rows.length){
   const cols=m.columns.map(c=>String(c));const find=(patterns)=>cols.find(c=>{const u=c.toUpperCase();return patterns.some(p=>p.test(u));});
