@@ -854,6 +854,7 @@ export default async function handler(req,res){
 
   try{
     if(plan.type==='trade_weather_exposure_ranking'){
+      const yearDimension=plan.year?'trade_risk.trade_year,\n             ':'';
       const yearFilter=plan.year?("\n    AND trade_risk.trade_year = "+Number(plan.year)):'';
       const deterministicSql=`SELECT * FROM SEMANTIC_VIEW(
   ${tradeSemanticView}
@@ -863,17 +864,28 @@ export default async function handler(req,res){
           trade_risk.elevated_weather_risk_trade_value_usd
   DIMENSIONS trade_risk.origin_iso,
              trade_risk.origin_country,
-             trade_risk.trade_year,
-             trade_risk.trade_direction
-  WHERE trade_risk.trade_direction = '${plan.direction||'IMPORT'}'
-    AND trade_risk.weather_coverage_pct > 0${yearFilter}
+             ${yearDimension}trade_risk.trade_direction
+  WHERE trade_risk.trade_direction = '${plan.direction||'IMPORT'}'${yearFilter}
 )
 ORDER BY IMPORT_VALUE_USD DESC,
          TRADE_WEIGHTED_WEATHER_RISK_SCORE DESC,
          ELEVATED_WEATHER_RISK_TRADE_VALUE_USD DESC,
          ORIGIN_COUNTRY ASC
-LIMIT 10`;
-      const result=await executeSql(base,pat,warehouse,deterministicSql);
+LIMIT 100`;
+      const rawResult=await executeSql(base,pat,warehouse,deterministicSql);
+      const coverageCol=(rawResult.columns||[]).find(c=>/WEATHER_COVERAGE_PCT/i.test(String(c)));
+      const importCol=(rawResult.columns||[]).find(c=>/IMPORT_VALUE_USD/i.test(String(c)));
+      const riskCol=(rawResult.columns||[]).find(c=>/TRADE_WEIGHTED_WEATHER_RISK_SCORE/i.test(String(c)));
+      const elevatedCol=(rawResult.columns||[]).find(c=>/ELEVATED_WEATHER_RISK_TRADE_VALUE_USD/i.test(String(c)));
+      const rows=(rawResult.rows||[])
+        .filter(row=>coverageCol&&Number(row[coverageCol]||0)>0)
+        .sort((a,b)=>
+          (Number(b[importCol]||0)-Number(a[importCol]||0))||
+          (Number(b[riskCol]||0)-Number(a[riskCol]||0))||
+          (Number(b[elevatedCol]||0)-Number(a[elevatedCol]||0))
+        )
+        .slice(0,10);
+      const result={columns:rawResult.columns,rows,truncated:false};
       return send(res,200,{
         source:'snowflake-governed-plan',
         requestId:'trade-weather-exposure-ranking',
