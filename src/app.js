@@ -690,6 +690,26 @@ function buildInvestigateQuestion(question,a){
  if(origin)return `For ${origin}, trace the highest-value commodity and transport dependencies, then identify any Nova Mobility suppliers, materials, purchase orders or plants linked to that origin and explain the operational exposure.`;
  return `Investigate the leading external exposure in this result and connect it to Nova Mobility suppliers, materials, purchase orders and plants where a Marketplace match exists. Keep external trade/weather context separate from internal operational evidence.`;
 }
+function buildDecisionSeedFromEvidence(question,a,narrative,rec=null){
+ const result=a?.result||{columns:[],rows:[]};
+ const nova=a?.semanticDomain==='nova-operations';
+ const supplier=firstResultValue(result,[/SUPPLIER_NAME/,/VENDOR_NAME/]);
+ const material=firstResultValue(result,[/MATERIAL_NAME/,/COMPONENT/,/PART_NAME/]);
+ const origin=firstResultValue(result,[/ORIGIN_COUNTRY/,/^COUNTRY$/]);
+ const plant=firstResultValue(result,[/PLANT_NAME/]);
+ const scratch=document.createElement('div');scratch.innerHTML=narrative||'';
+ const problem=(scratch.textContent||'').trim().slice(0,700);
+ if(rec){
+  return {title:rec.title,problem,action:rec.action,owner:rec.owner,priority:'High',status:'Proposed',expectedImpact:rec.expectedImpact,source:'OntoTrail governed analysis'};
+ }
+ let subject=material||supplier||plant||origin||(nova?'Nova operational exposure':'trade exposure');
+ let title=nova?`Review ${subject} continuity exposure`:`Review ${subject} risk exposure`;
+ let action=nova
+  ? 'Validate the current exposure, confirm whether mitigation is required, and assign the appropriate operational action using the latest supplier, PO, inventory and shipment evidence.'
+  : 'Validate the governed exposure, confirm whether mitigation is required, and assign the appropriate sourcing, routing or monitoring action using the latest trade and external-risk evidence.';
+ let owner=nova?'Supply Planning':'Trade Risk Lead';
+ return {title,problem,action,owner,priority:'High',status:'Proposed',expectedImpact:'Convert the governed finding into an owned, traceable decision and follow-up action.',source:'OntoTrail governed analysis'};
+}
 function buildScenarioSeed(question,a,narrative){
  const result=a?.result||{columns:[],rows:[]};const nova=a?.semanticDomain==='nova-operations';
  const supplier=firstResultValue(result,[/SUPPLIER_NAME/,/VENDOR_NAME/]);
@@ -870,13 +890,13 @@ async function ask(q){
   const suggestions=a.suggestions?.length?`<div class="analyst-suggestions"><span>Explore next</span>${a.suggestions.map(s=>`<button type="button" data-question="${e(s)}">${e(s)}</button>`).join('')}</div>`:'';
   const narrative=analystNarrative(question,a.result||{columns:[],rows:[]},a.text||'',a);
   const rec=hasRows&&wantsRecommendation&&!a.aiOrchestrated?recommendationFor(question,a.result):null;
-  const decisionSeed=rec?{title:rec.title,problem:block.querySelector('.user-question')?.textContent?narrative.replace(/<[^>]+>/g,''):'',action:rec.action,owner:rec.owner,priority:'High',status:'Assigned',expectedImpact:rec.expectedImpact,source:'Cortex Analyst'}:null;
+  const decisionSeed=hasRows?buildDecisionSeedFromEvidence(question,a,narrative,rec):null;
   if(decisionSeed)decisionInsights.set(rid,decisionSeed);
   const recHtml=rec?`<section class="recommendation-card"><span class="eyebrow">RECOMMENDED NEXT MOVE</span><h4>${e(rec.title)}</h4><p>${e(rec.action)}</p><div><span>Suggested owner</span><strong>${e(rec.owner)}</strong></div></section>`:'';
   const investigateQuestion=buildInvestigateQuestion(question,a);
   const scenarioSeed=buildScenarioSeed(question,a,narrative);
   const decisionBrief=decisionSeed?encodeAnalystPayload({seed:decisionSeed,meta:{semanticView:a.semanticView,intents:a.intents||[],rows:a.result?.rows?.length||0}}):'';
-  const workflowActions=hasRows?`<div class="analyst-workflow-actions"><button class="secondary small" data-investigate-question="${e(investigateQuestion)}">${icon('network')}Investigate further</button><button class="secondary small" data-ai-scenario="${e(encodeAnalystPayload(scenarioSeed))}">${icon('sliders')}Create scenario</button>${decisionSeed?`<button class="secondary small" data-decision-brief="${e(decisionBrief)}">${icon('file')}Generate decision brief</button><button class="primary small" data-decision-insight="${e(rid)}" data-decision-seed="${e(encodeDecisionSeed(decisionSeed))}">${icon('check')}Create decision</button>`:''}</div>`:'';
+  const workflowActions=hasRows?`<div class="analyst-workflow-actions"><button class="secondary small" data-investigate-question="${e(investigateQuestion)}">${icon('network')}Investigate further</button><button class="secondary small" data-ai-scenario="${e(encodeAnalystPayload(scenarioSeed))}">${icon('sliders')}Create scenario</button><button class="secondary small" data-decision-brief="${e(decisionBrief)}">${icon('file')}Generate decision brief</button><button class="primary small" data-decision-insight="${e(rid)}" data-decision-seed="${e(encodeDecisionSeed(decisionSeed))}">${icon('check')}Create decision</button></div>`:'';
   const grounding=a.needsContext?'':analystGroundingPanel(a);
   const interpretation=analysisQuestion!==question?`<p class="query-split-note">I answered the analytical part with Cortex Analyst, then generated the recommended action from the returned evidence.</p>`:'';
   answerEl.innerHTML=`<div class="answer-heading">${icon('chat')}<strong>OntoTrail Intelligence</strong><span class="live-pill">LIVE · SNOWFLAKE CORTEX</span></div><p class="direct-answer" data-stream-text></p><div class="analyst-reveal" hidden>${interpretation}${recHtml}${workflowActions}${grounding}${resultHtml}${warning}${sql}${suggestions}<small>${a.needsContext?'Conversation context required':`Grounded in ${e(a.semanticView||'Snowflake governed semantic views')} · Request ${e(a.requestId||'Snowflake')}`}</small></div><div class="assistant-response-actions"><button class="chat-action" type="button" data-chat-copy aria-label="Copy response" title="Copy response">Copy</button><button class="chat-action" type="button" data-chat-retry aria-label="Try again" title="Try again">Try again</button></div>`;
