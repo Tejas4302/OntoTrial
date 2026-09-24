@@ -226,6 +226,7 @@ test('operational impact follow-up uses conversation context rather than exact w
   for(const q of [
     'How will this affect our operations?',
     'What does this mean for us?',
+    'What does this mean for Nova?',
     'What is the impact on our supply chain?'
   ]){
     const p=resolveQuestionPlan(q,{previousQuestion:'Rank India imports by sea dependency in 2026',previousPlan,hasRows:true});
