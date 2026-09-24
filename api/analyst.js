@@ -263,22 +263,35 @@ async function aiSynthesize(base,pat,warehouse,model,input){
 
 
 async function runSemanticAnalyst(base,pat,semanticView,prompt){
-  const response=await fetchWithTimeout(base+'/api/v2/cortex/analyst/message',{
-    method:'POST',
-    headers:snowHeaders(pat),
-    body:JSON.stringify({
-      messages:[{role:'user',content:[{type:'text',text:prompt}]}],
-      semantic_view:semanticView,
-      stream:false
-    })
-  },50000);
-  const body=await response.json().catch(()=>({}));
-  if(!response.ok)throw Error(body.message||body.error||('Snowflake Cortex Analyst returned '+response.status+'.'));
-  const parsed=normalizeAnalyst(body);
-  return {
-    parsed,
-    requestId:body.request_id||response.headers.get('x-snowflake-request-id')||''
-  };
+  let lastError='Snowflake Cortex Analyst request failed.';
+  for(let attempt=0;attempt<3;attempt++){
+    try{
+      const response=await fetchWithTimeout(base+'/api/v2/cortex/analyst/message',{
+        method:'POST',
+        headers:snowHeaders(pat),
+        body:JSON.stringify({
+          messages:[{role:'user',content:[{type:'text',text:prompt}]}],
+          semantic_view:semanticView,
+          stream:false
+        })
+      },50000);
+      const body=await response.json().catch(()=>({}));
+      if(response.ok){
+        const parsed=normalizeAnalyst(body);
+        return {
+          parsed,
+          requestId:body.request_id||response.headers.get('x-snowflake-request-id')||''
+        };
+      }
+      lastError=body.message||body.error||('Snowflake Cortex Analyst returned '+response.status+'.');
+      if(!(response.status===429||response.status>=500))throw Error(lastError);
+    }catch(err){
+      lastError=err&&err.message?err.message:lastError;
+      if(attempt===2)break;
+    }
+    await new Promise(function(resolve){setTimeout(resolve,500*(attempt+1));});
+  }
+  throw Error(lastError);
 }
 
 function looksLikeInterpretationOnly(text){
@@ -1028,23 +1041,9 @@ LIMIT 25`;
       });
     }
 
-    const analyst=await fetchWithTimeout(`${base}/api/v2/cortex/analyst/message`,{
-      method:'POST',
-      headers:snowHeaders(pat),
-      body:JSON.stringify({
-        messages:[{role:'user',content:[{type:'text',text:governedQuestion}]}],
-        semantic_view:semanticView,
-        stream:false
-      })
-    },50000);
-
-    const body=await analyst.json().catch(()=>({}));
-    if(!analyst.ok)return send(res,502,{
-      error:body.message||body.error||`Snowflake Cortex Analyst returned ${analyst.status}.`,
-      requestId:body.request_id||analyst.headers.get('x-snowflake-request-id')||''
-    });
-
-    let parsed=normalizeAnalyst(body);
+    const analystCall=await runSemanticAnalyst(base,pat,semanticView,governedQuestion);
+    const body={request_id:analystCall.requestId};
+    let parsed=analystCall.parsed;
     let result=null;
     let executionWarning='';
     let fallbackUsed=false;
@@ -1150,7 +1149,7 @@ LIMIT 25`;
 
     return send(res,200,{
       source:'snowflake-cortex-analyst',
-      requestId:body.request_id||analyst.headers.get('x-snowflake-request-id')||'',
+      requestId:body.request_id||'',
       semanticView,
       semanticDomain:domain==='nova'?'nova-operations':'india-trade-risk',
       intents:intents.map(x=>x.id),
