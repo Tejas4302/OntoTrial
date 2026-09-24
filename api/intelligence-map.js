@@ -152,7 +152,7 @@ export function resolveQuestionPlan(question='',context={}){
 
   const deictic=/\b(this|that|these|those|it|they|them)\b/i.test(q);
   const impact=/\b(affect|impact|implication|mean for|matter to|risk to|exposure to)\b/i.test(q);
-  const workspaceRef=/\b(us|our|operations?|business|supply chain|suppliers?|materials?|components?|plants?|inventory|purchase[- ]orders?|pos?|shipments?)\b/i.test(q);
+  const workspaceRef=/\b(nova|us|our|operations?|business|supply chain|suppliers?|materials?|components?|plants?|inventory|purchase[- ]orders?|pos?|shipments?)\b/i.test(q);
   const operationalFollowup=(impact&&workspaceRef)||(deictic&&workspaceRef);
 
   if(operationalFollowup&&!hasContext){
