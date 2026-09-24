@@ -186,6 +186,20 @@ export function resolveQuestionPlan(question='',context={}){
     };
   }
 
+  const weatherLanguage=/\b(weather|weather risk|weather coverage|climate|risk score)\b/i.test(q);
+  const exposureLanguage=/\b(import exposure|import value|trade exposure|exposure|highest import|largest import)\b/i.test(q);
+  const countryLanguage=/\b(countries|country|origins?|origin countries?)\b/i.test(q);
+  if(weatherLanguage&&exposureLanguage&&countryLanguage&&rankingLanguage){
+    return {
+      type:'trade_weather_exposure_ranking',
+      domain:'trade',
+      direction:direction||'IMPORT',
+      year:yearMatch?Number(yearMatch[1]):null,
+      grain:'origin',
+      order
+    };
+  }
+
   if(operationalFollowup&&hasContext){
     return {type:'operational_impact_followup',domain:'nova',previousPlan};
   }
