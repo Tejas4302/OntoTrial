@@ -352,46 +352,68 @@ function analystNarrative(question,result,cortexText='',meta={}){
   const poValueCol=find([/TOTAL_PO_VALUE_USD/]),coverCol=find([/MINIMUM_DAYS_OF_COVER/]),delayedCol=find([/DELAYED_PO_VALUE_USD/]);
   const weatherValueCol=find([/WEATHER_LINKED_PO_VALUE_USD/]),highRiskCol=find([/HIGH_OPERATIONAL_RISK_PO_VALUE_USD/]),outstandingCol=find([/OUTSTANDING_QUANTITY/]),riskCol=find([/OPERATIONAL_RISK_LEVEL/]);
 
-  const rows=[...m.rows].sort((a,b)=>{
-    const vulnerability=r=>{
-      const cover=analystNumber(r[coverCol]);
-      return (analystNumber(r[highRiskCol])||0)*4+
-             (analystNumber(r[delayedCol])||0)*3+
-             (analystNumber(r[weatherValueCol])||0)*2+
-             (analystNumber(r[poValueCol])||0)+
-             (analystNumber(r[outstandingCol])||0)*1000+
-             (cover!==null&&cover<10?500000:0);
-    };
-    return vulnerability(b)-vulnerability(a);
-  });
-
+  const vulnerability=r=>{
+    const cover=analystNumber(r[coverCol]);
+    return (analystNumber(r[highRiskCol])||0)*4+
+           (analystNumber(r[delayedCol])||0)*3+
+           (analystNumber(r[weatherValueCol])||0)*2+
+           (analystNumber(r[poValueCol])||0)+
+           (analystNumber(r[outstandingCol])||0)*1000+
+           (cover!==null&&cover<10?500000:0);
+  };
+  const rows=[...m.rows].sort((a,b)=>vulnerability(b)-vulnerability(a));
   const top=rows[0];
   const next=rows.slice(1,3);
+
   const name=r=>materialCol&&r[materialCol]?e(r[materialCol]):supplierCol&&r[supplierCol]?e(r[supplierCol]):'Matched exposure';
-  const location=r=>[supplierCol&&r[supplierCol],originCol&&r[originCol],plantCol&&r[plantCol]].filter(Boolean).map(e).join(' · ');
-  const facts=r=>{
-    const out=[];
-    if(poValueCol&&analystNumber(r[poValueCol])>0)out.push(`${analystFormat(poValueCol,r[poValueCol])} PO exposure`);
-    if(delayedCol&&analystNumber(r[delayedCol])>0)out.push(`${analystFormat(delayedCol,r[delayedCol])} delayed exposure`);
-    if(weatherValueCol&&analystNumber(r[weatherValueCol])>0)out.push(`${analystFormat(weatherValueCol,r[weatherValueCol])} weather-linked exposure`);
-    if(outstandingCol&&analystNumber(r[outstandingCol])>0)out.push(`${analystFormat(outstandingCol,r[outstandingCol])} outstanding`);
-    if(coverCol&&analystNumber(r[coverCol])!==null)out.push(`${analystFormat(coverCol,r[coverCol])} cover`);
-    if(riskCol&&r[riskCol])out.push(`${e(r[riskCol])} operational risk`);
-    return out;
-  };
+  const loc=r=>[supplierCol&&r[supplierCol],originCol&&r[originCol],plantCol&&r[plantCol]].filter(Boolean).map(e).join(' · ');
+  const po=r=>poValueCol?analystNumber(r[poValueCol]):null;
+  const delay=r=>delayedCol?analystNumber(r[delayedCol]):null;
+  const weather=r=>weatherValueCol?analystNumber(r[weatherValueCol]):null;
+  const outstanding=r=>outstandingCol?analystNumber(r[outstandingCol]):null;
+  const cover=r=>coverCol?analystNumber(r[coverCol]):null;
+  const risk=r=>riskCol?String(r[riskCol]||'').trim():'';
 
   if(top){
-    let answer=`Nova's strongest current exposure in the matched records is <strong>${name(top)}</strong>`;
-    const loc=location(top);if(loc)answer+=` (${loc})`;
-    const topFacts=facts(top);if(topFacts.length)answer+=`, with ${topFacts.join(', ')}`;
+    const topSignals=[];
+    if(po(top)>0)topSignals.push(`${analystFormat(poValueCol,top[poValueCol])} in PO exposure`);
+    if(cover(top)!==null)topSignals.push(`${analystFormat(coverCol,top[coverCol])} of inventory cover`);
+    if(weather(top)>0)topSignals.push(`${analystFormat(weatherValueCol,top[weatherValueCol])} in weather-linked exposure`);
+    if(delay(top)>0)topSignals.push(`${analystFormat(delayedCol,top[delayedCol])} in delayed PO exposure`);
+    if(outstanding(top)>0)topSignals.push(`${analystFormat(outstandingCol,top[outstandingCol])} outstanding`);
+    if(risk(top))topSignals.push(`${e(risk(top))} operational risk`);
+
+    const hasConfirmedStress=rows.some(r=>delay(r)>0||outstanding(r)>0||/HIGH/i.test(risk(r))||(cover(r)!==null&&cover(r)<7));
+    let answer=hasConfirmedStress
+      ? 'The earlier external risk signal has operational relevance for Nova because it overlaps with internal supply vulnerability, but the returned evidence does not by itself prove a disruption. '
+      : 'The earlier external risk signal creates a potential continuity concern for Nova, but the returned operational data does not show a confirmed disruption. ';
+
+    answer+=`The most notable exposure is <strong>${name(top)}</strong>`;
+    const topLoc=loc(top);if(topLoc)answer+=` (${topLoc})`;
+    if(topSignals.length)answer+=`, with ${topSignals.join(', ')}`;
     answer+='.';
+
     if(next.length){
-      answer+=` Other exposures to watch are ${next.map(r=>{
-        const f=facts(r).slice(0,2);
-        return `<strong>${name(r)}</strong>${f.length?` (${f.join(' · ')})`:''}`;
-      }).join(' and ')}.`;
+      const secondary=next.map(r=>{
+        const bits=[];
+        if(po(r)>0)bits.push(`${analystFormat(poValueCol,r[poValueCol])} PO exposure`);
+        if(delay(r)>0)bits.push(`${analystFormat(delayedCol,r[delayedCol])} delayed`);
+        if(outstanding(r)>0)bits.push(`${analystFormat(outstandingCol,r[outstandingCol])} outstanding`);
+        if(cover(r)!==null&&cover(r)<12)bits.push(`${analystFormat(coverCol,r[coverCol])} cover`);
+        if(weather(r)>0)bits.push(`${analystFormat(weatherValueCol,r[weatherValueCol])} weather-linked`);
+        return `<strong>${name(r)}</strong>${bits.length?` (${bits.slice(0,2).join(' · ')})`:''}`;
+      }).join(' and ');
+      answer+=` Secondary exposures to watch are ${secondary}.`;
     }
-    answer+=' This indicates where Nova is most exposed in the returned operational data; it does not by itself confirm a disruption.';
+
+    const watch=[];
+    if(coverCol)watch.push('inventory cover');
+    if(delayedCol)watch.push('delayed POs');
+    if(outstandingCol)watch.push('outstanding quantities');
+    watch.push('shipment status');
+    if(weatherValueCol)watch.push('changes in the external weather signal');
+
+    answer+=` For Nova, the implication is <strong>higher continuity risk in these matched supply lines, not evidence of an active disruption</strong>. The next indicators to monitor are ${watch.join(', ')}.`;
     return answer;
   }
  } const crossDomainWeatherIntent=/\b(nova|supplier|vendor|material|component|plant|po|purchase order)\b/i.test(q)&&/\b(weather|external|marketplace|country risk|sea dependency)\b/i.test(q);
