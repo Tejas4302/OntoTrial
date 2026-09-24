@@ -348,80 +348,53 @@ function analystNarrative(question,result,cortexText='',meta={}){
  }
  if(queryPlan.type==='operational_impact'&&m.rows.length){
   const cols=m.columns.map(c=>String(c));const find=(patterns)=>cols.find(c=>{const u=c.toUpperCase();return patterns.some(p=>p.test(u));});
-  const supplierCol=find([/SUPPLIER_NAME/]),materialCol=find([/MATERIAL_NAME/]),originCol=find([/ORIGIN_COUNTRY/]),plantCol=find([/PLANT_NAME/]),hs4Col=find([/HS4_CODE/]);
-  const poValueCol=find([/TOTAL_PO_VALUE_USD/]),coverCol=find([/MINIMUM_DAYS_OF_COVER/]),delayedCol=find([/DELAYED_PO_VALUE_USD/]),riskCol=find([/OPERATIONAL_RISK_LEVEL/]);
-  const weatherValueCol=find([/WEATHER_LINKED_PO_VALUE_USD/]),highRiskCol=find([/HIGH_OPERATIONAL_RISK_PO_VALUE_USD/]),seaCol=find([/AVERAGE_MARKET_SEA_DEPENDENCY_PCT/]),outstandingCol=find([/OUTSTANDING_QUANTITY/]);
-  const contextCols=(queryPlan.contextColumns||[]).map(c=>String(c).toUpperCase());
-  const contextQuestion=String(queryPlan.contextQuestion||'').trim();
-  const contextUsesWeather=contextCols.some(c=>/WEATHER|RISK_SCORE|AFFECTED_LOCATION/.test(c));
-  const contextUsesSea=contextCols.some(c=>/SEA_DEPENDENCY|SEA_TRADE/.test(c));
-
-  const metricPriority=[];
-  if(contextUsesWeather&&weatherValueCol)metricPriority.push(weatherValueCol);
-  if(contextUsesSea&&seaCol)metricPriority.push(seaCol);
-  for(const col of [highRiskCol,delayedCol,poValueCol])if(col&&!metricPriority.includes(col))metricPriority.push(col);
+  const supplierCol=find([/SUPPLIER_NAME/]),materialCol=find([/MATERIAL_NAME/]),originCol=find([/ORIGIN_COUNTRY/]),plantCol=find([/PLANT_NAME/]);
+  const poValueCol=find([/TOTAL_PO_VALUE_USD/]),coverCol=find([/MINIMUM_DAYS_OF_COVER/]),delayedCol=find([/DELAYED_PO_VALUE_USD/]);
+  const weatherValueCol=find([/WEATHER_LINKED_PO_VALUE_USD/]),highRiskCol=find([/HIGH_OPERATIONAL_RISK_PO_VALUE_USD/]),outstandingCol=find([/OUTSTANDING_QUANTITY/]),riskCol=find([/OPERATIONAL_RISK_LEVEL/]);
 
   const rows=[...m.rows].sort((a,b)=>{
-   for(const col of metricPriority){
-    const d=(analystNumber(b[col])||0)-(analystNumber(a[col])||0);
-    if(d!==0)return d;
-   }
-   if(coverCol)return (analystNumber(a[coverCol])??1e9)-(analystNumber(b[coverCol])??1e9);
-   return 0;
+    const vulnerability=r=>{
+      const cover=analystNumber(r[coverCol]);
+      return (analystNumber(r[highRiskCol])||0)*4+
+             (analystNumber(r[delayedCol])||0)*3+
+             (analystNumber(r[weatherValueCol])||0)*2+
+             (analystNumber(r[poValueCol])||0)+
+             (analystNumber(r[outstandingCol])||0)*1000+
+             (cover!==null&&cover<10?500000:0);
+    };
+    return vulnerability(b)-vulnerability(a);
   });
 
-  const rowLabel=r=>materialCol&&r[materialCol]?e(r[materialCol]):supplierCol&&r[supplierCol]?e(r[supplierCol]):originCol&&r[originCol]?e(r[originCol]):'Matched exposure';
-  const descriptor=r=>{
-   const bits=[];
-   if(supplierCol&&r[supplierCol]&&materialCol)bits.push(e(r[supplierCol]));
-   if(originCol&&r[originCol])bits.push(e(r[originCol]));
-   if(poValueCol&&analystNumber(r[poValueCol])!==null)bits.push(`${analystFormat(poValueCol,r[poValueCol])} PO exposure`);
-   if(coverCol&&analystNumber(r[coverCol])!==null)bits.push(`${analystFormat(coverCol,r[coverCol])} cover`);
-   if(riskCol&&r[riskCol])bits.push(`${e(r[riskCol])} operational risk`);
-   if(plantCol&&r[plantCol])bits.push(e(r[plantCol]));
-   return bits;
+  const top=rows[0];
+  const next=rows.slice(1,3);
+  const name=r=>materialCol&&r[materialCol]?e(r[materialCol]):supplierCol&&r[supplierCol]?e(r[supplierCol]):'Matched exposure';
+  const location=r=>[supplierCol&&r[supplierCol],originCol&&r[originCol],plantCol&&r[plantCol]].filter(Boolean).map(e).join(' · ');
+  const facts=r=>{
+    const out=[];
+    if(poValueCol&&analystNumber(r[poValueCol])>0)out.push(`${analystFormat(poValueCol,r[poValueCol])} PO exposure`);
+    if(delayedCol&&analystNumber(r[delayedCol])>0)out.push(`${analystFormat(delayedCol,r[delayedCol])} delayed exposure`);
+    if(weatherValueCol&&analystNumber(r[weatherValueCol])>0)out.push(`${analystFormat(weatherValueCol,r[weatherValueCol])} weather-linked exposure`);
+    if(outstandingCol&&analystNumber(r[outstandingCol])>0)out.push(`${analystFormat(outstandingCol,r[outstandingCol])} outstanding`);
+    if(coverCol&&analystNumber(r[coverCol])!==null)out.push(`${analystFormat(coverCol,r[coverCol])} cover`);
+    if(riskCol&&r[riskCol])out.push(`${e(r[riskCol])} operational risk`);
+    return out;
   };
 
-  const primary=rows[0];
-  const secondary=rows.slice(1,3);
-  const primaryDrivers=[];
-  if(contextUsesWeather&&weatherValueCol&&analystNumber(primary?.[weatherValueCol])>0)primaryDrivers.push(`${analystFormat(weatherValueCol,primary[weatherValueCol])} weather-linked PO exposure`);
-  if(contextUsesSea&&seaCol&&analystNumber(primary?.[seaCol])!==null)primaryDrivers.push(`${analystFormat(seaCol,primary[seaCol])} external sea dependency`);
-  if(highRiskCol&&analystNumber(primary?.[highRiskCol])>0)primaryDrivers.push(`${analystFormat(highRiskCol,primary[highRiskCol])} high-risk PO exposure`);
-  if(delayedCol&&analystNumber(primary?.[delayedCol])>0)primaryDrivers.push(`${analystFormat(delayedCol,primary[delayedCol])} delayed exposure`);
-  if(outstandingCol&&analystNumber(primary?.[outstandingCol])>0)primaryDrivers.push(`${analystFormat(outstandingCol,primary[outstandingCol])} outstanding`);
-
-  const mapped=(queryPlan.mappingKeys||[]).map(x=>String(x.targetDimension||'').split('.').pop()).filter(Boolean);
-  const mappingText=mapped.length?` through shared ${mapped.join(' + ')} mapping`:' through governed shared dimensions';
-  const contextLead=contextQuestion?`The earlier finding (${e(contextQuestion)})`:'The earlier external finding';
-
-  let answer=`${contextLead} maps to Nova Mobility${mappingText}. `;
-  if(primary){
-   answer+=`The clearest operational exposure is <strong>${rowLabel(primary)}</strong>`;
-   const desc=descriptor(primary);if(desc.length)answer+=` (${desc.join(' · ')})`;
-   if(primaryDrivers.length)answer+=`. The main drivers are <strong>${primaryDrivers.join('</strong>, <strong>')}</strong>`;
-   answer+='.';
+  if(top){
+    let answer=`Nova's strongest current exposure in the matched records is <strong>${name(top)}</strong>`;
+    const loc=location(top);if(loc)answer+=` (${loc})`;
+    const topFacts=facts(top);if(topFacts.length)answer+=`, with ${topFacts.join(', ')}`;
+    answer+='.';
+    if(next.length){
+      answer+=` Other exposures to watch are ${next.map(r=>{
+        const f=facts(r).slice(0,2);
+        return `<strong>${name(r)}</strong>${f.length?` (${f.join(' · ')})`:''}`;
+      }).join(' and ')}.`;
+    }
+    answer+=' This indicates where Nova is most exposed in the returned operational data; it does not by itself confirm a disruption.';
+    return answer;
   }
-
-  if(secondary.length){
-   const next=secondary.map(r=>{
-    const facts=[];
-    if(contextUsesWeather&&weatherValueCol&&analystNumber(r[weatherValueCol])>0)facts.push(`${analystFormat(weatherValueCol,r[weatherValueCol])} weather-linked`);
-    if(contextUsesSea&&seaCol&&analystNumber(r[seaCol])!==null)facts.push(`${analystFormat(seaCol,r[seaCol])} sea dependency`);
-    if(delayedCol&&analystNumber(r[delayedCol])>0)facts.push(`${analystFormat(delayedCol,r[delayedCol])} delayed`);
-    if(poValueCol&&analystNumber(r[poValueCol])!==null)facts.push(`${analystFormat(poValueCol,r[poValueCol])} PO exposure`);
-    return `<strong>${rowLabel(r)}</strong>${facts.length?` (${facts.join(' · ')})`:''}`;
-   }).join(' and ');
-   answer+=` Next to watch: ${next}.`;
-  }
-
-  const zeroWeather=contextUsesWeather&&weatherValueCol&&rows.every(r=>(analystNumber(r[weatherValueCol])||0)===0);
-  if(zeroWeather)answer+=' The mapped Nova records do not currently show weather-linked PO exposure, so the external weather signal should be treated as context rather than evidence of direct operational disruption.';
-
-  answer+=' Decision focus: prioritize the matched exposures where the external context overlaps with internal delay, low cover, outstanding quantity, or elevated operational risk.';
-  return answer;
- }
- const crossDomainWeatherIntent=/\b(nova|supplier|vendor|material|component|plant|po|purchase order)\b/i.test(q)&&/\b(weather|external|marketplace|country risk|sea dependency)\b/i.test(q);
+ } const crossDomainWeatherIntent=/\b(nova|supplier|vendor|material|component|plant|po|purchase order)\b/i.test(q)&&/\b(weather|external|marketplace|country risk|sea dependency)\b/i.test(q);
  if(crossDomainWeatherIntent&&m.rows.length){
   const cols=m.columns.map(c=>String(c));const find=(patterns)=>cols.find(c=>{const u=c.toUpperCase();return patterns.some(p=>p.test(u));});
   const supplierCol=find([/SUPPLIER_NAME/,/VENDOR_NAME/]),materialCol=find([/MATERIAL_NAME/]),plantCol=find([/PLANT_NAME/]),originCol=find([/ORIGIN_COUNTRY/]),weatherCol=find([/WEATHER_RISK_LEVEL/]),matchCol=find([/MARKETPLACE_MATCH_STATUS/]);
