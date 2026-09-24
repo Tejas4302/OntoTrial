@@ -359,84 +359,84 @@ async function contextualAnalystOrchestration({base,pat,warehouse,question,previ
     previousColumns,
     previousRows
   );
-  const evidence=compactAiResult(previousResult&&previousResult.result||{},8);
-  const common=[
-    'ONTO TRAIL CONVERSATIONAL ANALYSIS',
-    'Current user question: '+question,
-    previousQuestion?'Immediately previous user question: '+previousQuestion:'',
-    previousAnswer?'Immediately previous governed answer: '+previousAnswer:'',
-    'Immediately previous governed evidence: '+JSON.stringify(evidence),
-    'Interpret the current question in the context of the immediately previous turn.',
-    'Do not invent facts or causal relationships.',
-    'If the question is outside this semantic view, explicitly say OUT_OF_SCOPE and do not generate unrelated SQL.'
-  ].filter(Boolean);
 
-  const tradePrompt=[
-    ...common,
-    '',
-    'You are evaluating whether the current question should be answered from the governed India trade-risk semantic view.',
-    'Use this view only for bilateral trade flows, commodity exposure, transport dependency and weather-linked external context.',
-    'If the previous turn already moved into Nova operational evidence and the current question is about an operational implication or decision, return OUT_OF_SCOPE rather than reverting to external trade data.'
-  ].join('\n');
+  const q=String(question||'');
+  const novaSignals=(q.match(/\b(nova|our|ours|operations?|supplier|suppliers|material|materials|plant|plants|inventory|shipment|shipments|purchase|po|decision|mitigat|recommend|priority|prioritize|action)\b/ig)||[]).length;
+  const tradeSignals=(q.match(/\b(import|imports|export|exports|trade|commodity|commodities|country|countries|origin|origins|sea|air|land|weather|transport|marketplace)\b/ig)||[]).length;
 
-  const novaMappingHint=mapping
-    ? 'A governed cross-domain overlap is available through '+mapping.key+' using these previous-result values: '+mapping.values.join(', ')+'. This overlap is contextual, not proof of causation.'
-    : 'No governed shared key is available from the previous result. Do not invent a cross-domain relationship.';
+  let preferred='trade';
+  if(novaSignals>tradeSignals)preferred='nova';
+  else if(tradeSignals>novaSignals)preferred='trade';
+  else if(/nova-operations/i.test(previousSemanticDomain))preferred='nova';
+  else if(/trade-risk/i.test(previousSemanticDomain)&&/\b(nova|our|operations?)\b/i.test(q))preferred='nova';
 
-  const novaPrompt=[
-    ...common,
-    '',
-    'You are evaluating whether the current question should be answered from the governed Nova Mobility operational semantic view.',
-    'Use this view for suppliers, materials, purchase orders, shipments, inventory, plants and operational risk.',
-    novaMappingHint,
-    mapping?'When useful, constrain the analysis to the matching '+mapping.key+' values above.':'',
-    'For decision-support questions, recommend only bounded actions justified by the returned Nova operational evidence. If evidence shows exposure but not confirmed disruption, frame the action as monitoring, validation, contingency planning, inventory protection, supplier engagement or scenario testing rather than claiming a disruption.'
-  ].filter(Boolean).join('\n');
+  const order=preferred==='nova'?['nova','trade']:['trade','nova'];
+  const specs={
+    trade:{domain:'trade',semanticDomain:'india-trade-risk',semanticView:tradeSemanticView},
+    nova:{domain:'nova',semanticDomain:'nova-operations',semanticView:novaSemanticView}
+  };
 
-  const settled=await Promise.allSettled([
-    runSemanticAnalyst(base,pat,tradeSemanticView,tradePrompt),
-    runSemanticAnalyst(base,pat,novaSemanticView,novaPrompt)
-  ]);
+  const buildPrompt=function(domain){
+    const isNova=domain==='nova';
+    const lines=[
+      'ONTO TRAIL FOLLOW-UP',
+      'Current question: '+question,
+      previousQuestion?'Previous question: '+previousQuestion:'',
+      previousAnswer?'Previous governed answer: '+previousAnswer:'',
+      isNova
+        ? 'Use the Nova Mobility operational semantic view: suppliers, materials, purchase orders, shipments, inventory, plants and operational risk.'
+        : 'Use the India trade-risk semantic view: bilateral trade, commodity exposure, transport dependency and weather-linked external context.',
+      'Answer by generating the governed SQL needed for this follow-up.',
+      'Do not invent facts or causal relationships.',
+      'If this semantic view cannot answer the question, respond OUT_OF_SCOPE and do not generate unrelated SQL.'
+    ];
+    if(isNova&&mapping){
+      lines.push(
+        'Governed cross-domain overlap is available through '+mapping.key+'.',
+        'Restrict the operational analysis to these matched values when relevant: '+mapping.values.join(', ')+'.',
+        'The overlap indicates potential relevance only; it is not proof of disruption.'
+      );
+    }
+    if(isNova){
+      lines.push('If the question asks what Nova should do, return the operational evidence needed to support a bounded next step; do not claim disruption without internal evidence.');
+    }
+    return lines.filter(Boolean).join('\n');
+  };
 
   const candidates=[];
-  const specs=[
-    {domain:'trade',semanticDomain:'india-trade-risk',semanticView:tradeSemanticView},
-    {domain:'nova',semanticDomain:'nova-operations',semanticView:novaSemanticView}
-  ];
-
-  for(let i=0;i<settled.length;i++){
-    const item=settled[i];
-    if(item.status!=='fulfilled')continue;
-    const spec=specs[i];
-    const parsed=item.value.parsed;
-    const sql=safeSelect(parsed.sql);
-    let result=null;
-    let executionWarning='';
-    if(sql){
+  for(const domain of order){
+    const spec=specs[domain];
+    try{
+      const out=await runSemanticAnalyst(base,pat,spec.semanticView,buildPrompt(domain));
+      const parsed=out.parsed;
+      const initialText=String(parsed&&parsed.text||'').trim();
+      if(/out_of_scope|out of scope|outside the scope/i.test(initialText))continue;
+      const sql=safeSelect(parsed.sql);
+      if(!sql)continue;
+      let result=null;
+      let executionWarning='';
       try{result=await executeSql(base,pat,warehouse,sql);}
       catch(err){executionWarning=err&&err.message?err.message:'Generated SQL could not be executed.';}
-    }
-    const candidate={...spec,parsed,sql:sql||'',result,executionWarning,requestId:item.value.requestId};
-    candidate.score=analystCandidateScore(candidate,question,previousSemanticDomain,mapping);
-    candidates.push(candidate);
+      if(!result?.rows?.length)continue;
+
+      const candidate={...spec,parsed,sql,result,executionWarning,requestId:out.requestId};
+      candidate.score=analystCandidateScore(candidate,question,previousSemanticDomain,mapping);
+      candidates.push(candidate);
+
+      // Prefer the first semantically-selected domain once it returns governed rows.
+      if(domain===preferred)break;
+    }catch{}
   }
 
-  if(!candidates.length)throw Error('Neither governed Cortex Analyst semantic view could evaluate this follow-up.');
+  if(!candidates.length)throw Error('No governed semantic view returned usable rows for this follow-up.');
   candidates.sort(function(a,b){return b.score-a.score;});
   const chosen=candidates[0];
   const initialText=String(chosen.parsed&&chosen.parsed.text||'').trim();
-  if(chosen.score<0||/out of scope/i.test(initialText)||!chosen.result?.rows?.length){
-    throw Error('No governed semantic view could answer this follow-up with sufficient governed rows.');
-  }
 
   let chosenText='';
   if(initialText&&!looksLikeInterpretationOnly(initialText))chosenText=initialText;
-  if(!chosenText){
-    chosenText=genericEvidenceAnswer(question,chosen.result,chosen.semanticDomain);
-  }
-  if(!chosenText){
-    throw Error('Cortex Analyst produced governed rows but no usable business answer.');
-  }
+  if(!chosenText)chosenText=genericEvidenceAnswer(question,chosen.result,chosen.semanticDomain);
+  if(!chosenText)throw Error('Governed rows were returned but no usable answer could be produced.');
 
   return {
     source:'snowflake-cortex-analyst-orchestrated',
@@ -449,16 +449,15 @@ async function contextualAnalystOrchestration({base,pat,warehouse,question,previ
       metrics:DATASET_DOMAINS[chosen.domain].metrics.length
     },
     warehouse,
-    text:chosenText||'I found governed evidence relevant to this follow-up.',
+    text:chosenText,
     sql:chosen.sql,
     suggestions:(chosen.parsed&&chosen.parsed.suggestions)||[],
     result:chosen.result,
     queryPlan:{
       type:'cortex_analyst_orchestration',
-      evidence_strategy:'semantic_view_competition',
+      evidence_strategy:'trial_safe_sequential',
       selected_domain:chosen.domain,
-      mapping_used:mapping?mapping.key:null,
-      candidate_scores:Object.fromEntries(candidates.map(function(c){return [c.domain,c.score];}))
+      mapping_used:mapping?mapping.key:null
     },
     orchestrationPlan:{
       engine:'cortex_analyst',
@@ -472,7 +471,6 @@ async function contextualAnalystOrchestration({base,pat,warehouse,question,previ
     executionWarning:chosen.executionWarning||''
   };
 }
-
 
 export default async function handler(req,res){
   if(req.method!=='POST'){res.setHeader('Allow','POST');return send(res,405,{error:'Method not allowed.'});}
@@ -500,10 +498,11 @@ export default async function handler(req,res){
   const previousSemanticView=String(previousResult?.semanticView||'').trim();
   const hasFollowupContext=Boolean(previousQuestion||previousAnswer||previousRows.length||previousPlan);
   const aiModel=process.env.SNOWFLAKE_CORTEX_MODEL||'openai-gpt-5';
+  const enableGeneralPlanner=String(process.env.ENABLE_CORTEX_LLM_PLANNER||'').toLowerCase()==='true';
   let aiPlan=null;
   let aiPlannerWarning='';
   try{
-    aiPlan=await aiPlanQuestion(base,pat,warehouse,aiModel,{
+    if(enableGeneralPlanner)aiPlan=await aiPlanQuestion(base,pat,warehouse,aiModel,{
       question,
       previous_question:previousQuestion||null,
       previous_answer:previousAnswer||null,
@@ -514,6 +513,7 @@ export default async function handler(req,res){
       previous_semantic_view:previousSemanticView||null,
       previous_rows_available:previousRows.length>0
     });
+    else if(hasFollowupContext)aiPlannerWarning='General Cortex LLM planner disabled for this trial account; using Cortex Analyst orchestration.';
   }catch(err){
     aiPlannerWarning=err&&err.message?err.message:'AI planner unavailable.';
   }
