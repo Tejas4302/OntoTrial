@@ -888,6 +888,47 @@ export default async function handler(req,res){
   ].filter(Boolean).join("\n");
 
   try{
+    if(plan.type==='trade_weather_exposure_ranking'){
+      const yearFilter=plan.year?("\n    AND trade_risk.trade_year = "+Number(plan.year)):'';
+      const deterministicSql=`SELECT * FROM SEMANTIC_VIEW(
+  ${tradeSemanticView}
+  METRICS trade_risk.import_value_usd,
+          trade_risk.trade_weighted_weather_risk_score,
+          trade_risk.weather_coverage_pct,
+          trade_risk.elevated_weather_risk_trade_value_usd
+  DIMENSIONS trade_risk.origin_iso,
+             trade_risk.origin_country,
+             trade_risk.trade_year,
+             trade_risk.trade_direction
+  WHERE trade_risk.trade_direction = '${plan.direction||'IMPORT'}'
+    AND trade_risk.weather_coverage_pct > 0${yearFilter}
+)
+ORDER BY IMPORT_VALUE_USD DESC,
+         TRADE_WEIGHTED_WEATHER_RISK_SCORE DESC,
+         ELEVATED_WEATHER_RISK_TRADE_VALUE_USD DESC,
+         ORIGIN_COUNTRY ASC
+LIMIT 10`;
+      const result=await executeSql(base,pat,warehouse,deterministicSql);
+      return send(res,200,{
+        source:'snowflake-governed-plan',
+        requestId:'trade-weather-exposure-ranking',
+        semanticView:tradeSemanticView,
+        semanticDomain:'india-trade-risk',
+        intents:['trade_exposure','weather_risk'],
+        datasetCoverage:{dimensions:DATASET_DOMAINS.trade.dimensions.length,metrics:DATASET_DOMAINS.trade.metrics.length},
+        warehouse,
+        text:'Ranked governed import exposure among origins with weather coverage using import value and weather-risk metrics.',
+        sql:deterministicSql,
+        suggestions:['What does this mean for Nova?','Which of these origins have the highest sea dependency?','Which commodities drive the top origin exposures?'],
+        result,
+        queryPlan:plan,
+        aiOrchestrated:false,
+        fallbackUsed:false,
+        followupContextUsed:hasFollowupContext,
+        executionWarning:''
+      });
+    }
+
     if(plan.type==='transport_dependency_ranking'&&plan.year&&plan.direction){
       const semanticMetric={
         SEA_DEPENDENCY_PCT:'trade_risk.sea_dependency_pct',
