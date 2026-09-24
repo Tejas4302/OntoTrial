@@ -262,6 +262,156 @@ async function aiSynthesize(base,pat,warehouse,model,input){
 }
 
 
+async function runSemanticAnalyst(base,pat,semanticView,prompt){
+  const response=await fetchWithTimeout(base+'/api/v2/cortex/analyst/message',{
+    method:'POST',
+    headers:snowHeaders(pat),
+    body:JSON.stringify({
+      messages:[{role:'user',content:[{type:'text',text:prompt}]}],
+      semantic_view:semanticView,
+      stream:false
+    })
+  },50000);
+  const body=await response.json().catch(()=>({}));
+  if(!response.ok)throw Error(body.message||body.error||('Snowflake Cortex Analyst returned '+response.status+'.'));
+  const parsed=normalizeAnalyst(body);
+  return {
+    parsed,
+    requestId:body.request_id||response.headers.get('x-snowflake-request-id')||''
+  };
+}
+function contextQuestionTokens(question){
+  const stop=new Set(['what','which','that','this','these','those','does','mean','with','from','into','have','will','would','could','should','about','there','their','them','then','than','your','ours','take','action']);
+  return [...new Set(String(question||'').toLowerCase().match(/[a-z0-9]+/g)||[])]
+    .filter(function(x){return x.length>3&&!stop.has(x);});
+}
+function analystCandidateScore(candidate,question,previousSemanticDomain,mapping){
+  let score=0;
+  if(candidate.sql)score+=2;
+  const rows=candidate.result&&candidate.result.rows||[];
+  if(rows.length)score+=5;
+  const text=String(candidate.parsed&&candidate.parsed.text||'');
+  if(/out of scope|outside the scope|cannot answer|not available in this semantic/i.test(text))score-=8;
+  const haystack=((candidate.result&&candidate.result.columns||[]).join(' ')+' '+text).toLowerCase();
+  for(const token of contextQuestionTokens(question))if(haystack.includes(token))score+=1;
+  if(previousSemanticDomain&&candidate.semanticDomain===previousSemanticDomain)score+=1;
+  if(candidate.domain==='nova'&&/\b(nova|our|ours|operations?|supplier|suppliers|material|materials|plant|plants|inventory|shipment|shipments|purchase|po|decision|mitigat|recommend|priority|prioritize)\b/i.test(question))score+=3;
+  if(candidate.domain==='trade'&&/\b(import|imports|export|exports|trade|commodity|commodities|country|countries|origin|origins|sea|air|land|weather|transport)\b/i.test(question))score+=2;
+  if(candidate.domain==='nova'&&mapping)score+=1;
+  return score;
+}
+async function contextualAnalystOrchestration({base,pat,warehouse,question,previousQuestion,previousAnswer,previousResult,previousRows,previousColumns,previousSemanticDomain,tradeSemanticView,novaSemanticView}){
+  const mapping=selectAiMapping(
+    AI_MAPPING_CATALOG.map(function(x){return x.key;}),
+    previousColumns,
+    previousRows
+  );
+  const evidence=compactAiResult(previousResult&&previousResult.result||{},8);
+  const common=[
+    'ONTO TRAIL CONVERSATIONAL ANALYSIS',
+    'Current user question: '+question,
+    previousQuestion?'Immediately previous user question: '+previousQuestion:'',
+    previousAnswer?'Immediately previous governed answer: '+previousAnswer:'',
+    'Immediately previous governed evidence: '+JSON.stringify(evidence),
+    'Interpret the current question in the context of the immediately previous turn.',
+    'Do not invent facts or causal relationships.',
+    'If the question is outside this semantic view, explicitly say OUT_OF_SCOPE and do not generate unrelated SQL.'
+  ].filter(Boolean);
+
+  const tradePrompt=[
+    ...common,
+    '',
+    'You are evaluating whether the current question should be answered from the governed India trade-risk semantic view.',
+    'Use this view only for bilateral trade flows, commodity exposure, transport dependency and weather-linked external context.',
+    'If the previous turn already moved into Nova operational evidence and the current question is about an operational implication or decision, return OUT_OF_SCOPE rather than reverting to external trade data.'
+  ].join('\n');
+
+  const novaMappingHint=mapping
+    ? 'A governed cross-domain overlap is available through '+mapping.key+' using these previous-result values: '+mapping.values.join(', ')+'. This overlap is contextual, not proof of causation.'
+    : 'No governed shared key is available from the previous result. Do not invent a cross-domain relationship.';
+
+  const novaPrompt=[
+    ...common,
+    '',
+    'You are evaluating whether the current question should be answered from the governed Nova Mobility operational semantic view.',
+    'Use this view for suppliers, materials, purchase orders, shipments, inventory, plants and operational risk.',
+    novaMappingHint,
+    mapping?'When useful, constrain the analysis to the matching '+mapping.key+' values above.':'',
+    'For decision-support questions, recommend only bounded actions justified by the returned Nova operational evidence. If evidence shows exposure but not confirmed disruption, frame the action as monitoring, validation, contingency planning, inventory protection, supplier engagement or scenario testing rather than claiming a disruption.'
+  ].filter(Boolean).join('\n');
+
+  const settled=await Promise.allSettled([
+    runSemanticAnalyst(base,pat,tradeSemanticView,tradePrompt),
+    runSemanticAnalyst(base,pat,novaSemanticView,novaPrompt)
+  ]);
+
+  const candidates=[];
+  const specs=[
+    {domain:'trade',semanticDomain:'india-trade-risk',semanticView:tradeSemanticView},
+    {domain:'nova',semanticDomain:'nova-operations',semanticView:novaSemanticView}
+  ];
+
+  for(let i=0;i<settled.length;i++){
+    const item=settled[i];
+    if(item.status!=='fulfilled')continue;
+    const spec=specs[i];
+    const parsed=item.value.parsed;
+    const sql=safeSelect(parsed.sql);
+    let result=null;
+    let executionWarning='';
+    if(sql){
+      try{result=await executeSql(base,pat,warehouse,sql);}
+      catch(err){executionWarning=err&&err.message?err.message:'Generated SQL could not be executed.';}
+    }
+    const candidate={...spec,parsed,sql:sql||'',result,executionWarning,requestId:item.value.requestId};
+    candidate.score=analystCandidateScore(candidate,question,previousSemanticDomain,mapping);
+    candidates.push(candidate);
+  }
+
+  if(!candidates.length)throw Error('Neither governed Cortex Analyst semantic view could evaluate this follow-up.');
+  candidates.sort(function(a,b){return b.score-a.score;});
+  const chosen=candidates[0];
+  const chosenText=String(chosen.parsed&&chosen.parsed.text||'').trim();
+  if(chosen.score<0||/out of scope/i.test(chosenText)){
+    throw Error('No governed semantic view could answer this follow-up with sufficient evidence.');
+  }
+
+  return {
+    source:'snowflake-cortex-analyst-orchestrated',
+    requestId:chosen.requestId||('analyst-orchestrated-'+chosen.domain),
+    semanticView:chosen.semanticView,
+    semanticDomain:chosen.semanticDomain,
+    intents:['contextual_ai_orchestration'],
+    datasetCoverage:{
+      dimensions:DATASET_DOMAINS[chosen.domain].dimensions.length,
+      metrics:DATASET_DOMAINS[chosen.domain].metrics.length
+    },
+    warehouse,
+    text:chosenText||'I found governed evidence relevant to this follow-up.',
+    sql:chosen.sql,
+    suggestions:(chosen.parsed&&chosen.parsed.suggestions)||[],
+    result:chosen.result,
+    queryPlan:{
+      type:'cortex_analyst_orchestration',
+      evidence_strategy:'semantic_view_competition',
+      selected_domain:chosen.domain,
+      mapping_used:mapping?mapping.key:null,
+      candidate_scores:Object.fromEntries(candidates.map(function(c){return [c.domain,c.score];}))
+    },
+    orchestrationPlan:{
+      engine:'cortex_analyst',
+      selected_domain:chosen.domain,
+      mapping_used:mapping?mapping.key:null
+    },
+    aiOrchestrated:true,
+    mappingUsed:mapping?mapping.key:null,
+    fallbackUsed:false,
+    followupContextUsed:true,
+    executionWarning:chosen.executionWarning||''
+  };
+}
+
+
 export default async function handler(req,res){
   if(req.method!=='POST'){res.setHeader('Allow','POST');return send(res,405,{error:'Method not allowed.'});}
   if(!readSession(req))return send(res,401,{error:'Authentication required.'});
@@ -516,47 +666,65 @@ export default async function handler(req,res){
     }catch(err){
       aiPlannerWarning='AI orchestration failure: '+(err&&err.message?err.message:'unknown orchestration error');
       if(hasFollowupContext){
-        return send(res,200,{
-          source:'snowflake-ai-orchestration-error',
-          requestId:'ai-followup-orchestration-error',
-          semanticView:previousSemanticView||'',
-          semanticDomain:previousSemanticDomain||'conversation',
-          intents:['ai_orchestration_error'],
-          datasetCoverage:{dimensions:0,metrics:0},
-          warehouse,
-          text:'I could not complete the governed AI follow-up reliably, so I did not fall back to a different semantic domain. Please retry this turn.',
-          sql:'',
-          suggestions:[],
-          result:null,
-          queryPlan:aiPlan||null,
-          orchestrationPlan:aiPlan||null,
-          aiOrchestrated:true,
-          fallbackUsed:false,
-          followupContextUsed:true,
-          executionWarning:aiPlannerWarning
-        });
+        try{
+          const fallback=await contextualAnalystOrchestration({
+            base,pat,warehouse,question,previousQuestion,previousAnswer,previousResult,
+            previousRows,previousColumns,previousSemanticDomain,tradeSemanticView,novaSemanticView
+          });
+          fallback.executionWarning='';
+          return send(res,200,fallback);
+        }catch(fallbackErr){
+          return send(res,200,{
+            source:'snowflake-cortex-analyst-orchestration-error',
+            requestId:'analyst-followup-orchestration-error',
+            semanticView:previousSemanticView||'',
+            semanticDomain:previousSemanticDomain||'conversation',
+            intents:['contextual_ai_orchestration_error'],
+            datasetCoverage:{dimensions:0,metrics:0},
+            warehouse,
+            text:'I could not resolve this follow-up against either governed semantic view without risking an incorrect answer. Please retry or make the business entity you want to analyze explicit.',
+            sql:'',
+            suggestions:[],
+            result:null,
+            queryPlan:aiPlan||null,
+            orchestrationPlan:{engine:'cortex_analyst'},
+            aiOrchestrated:true,
+            fallbackUsed:false,
+            followupContextUsed:true,
+            executionWarning:fallbackErr&&fallbackErr.message?fallbackErr.message:aiPlannerWarning
+          });
+        }
       }
     }
   }else if(hasFollowupContext){
-    return send(res,200,{
-      source:'snowflake-ai-planner-error',
-      requestId:'ai-followup-planner-error',
-      semanticView:previousSemanticView||'',
-      semanticDomain:previousSemanticDomain||'conversation',
-      intents:['ai_planner_error'],
-      datasetCoverage:{dimensions:0,metrics:0},
-      warehouse,
-      text:'I could not interpret this follow-up with the AI planner reliably, so I did not route it to a different dataset. Please retry this turn.',
-      sql:'',
-      suggestions:[],
-      result:null,
-      queryPlan:null,
-      orchestrationPlan:null,
-      aiOrchestrated:true,
-      fallbackUsed:false,
-      followupContextUsed:true,
-      executionWarning:aiPlannerWarning
-    });
+    try{
+      const fallback=await contextualAnalystOrchestration({
+        base,pat,warehouse,question,previousQuestion,previousAnswer,previousResult,
+        previousRows,previousColumns,previousSemanticDomain,tradeSemanticView,novaSemanticView
+      });
+      if(aiPlannerWarning)fallback.executionWarning='';
+      return send(res,200,fallback);
+    }catch(err){
+      return send(res,200,{
+        source:'snowflake-cortex-analyst-orchestration-error',
+        requestId:'analyst-followup-orchestration-error',
+        semanticView:previousSemanticView||'',
+        semanticDomain:previousSemanticDomain||'conversation',
+        intents:['contextual_ai_orchestration_error'],
+        datasetCoverage:{dimensions:0,metrics:0},
+        warehouse,
+        text:'I could not resolve this follow-up against either governed semantic view without risking an incorrect answer. Please retry or make the business entity you want to analyze explicit.',
+        sql:'',
+        suggestions:[],
+        result:null,
+        queryPlan:null,
+        orchestrationPlan:{engine:'cortex_analyst'},
+        aiOrchestrated:true,
+        fallbackUsed:false,
+        followupContextUsed:true,
+        executionWarning:err&&err.message?err.message:'Cortex Analyst orchestration failed.'
+      });
+    }
   }
 
   const plan=resolveQuestionPlan(question,{
