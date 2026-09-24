@@ -151,7 +151,10 @@ async function aiPlanQuestion(base,pat,model,input){
     'Do not choose a strategy because of a specific phrase. Choose it from the semantic information need.',
     'Decision support for Nova Mobility must ultimately be grounded in Nova operational evidence. External trade/weather evidence can provide context, but not by itself justify a company action.',
     'Use only mappings in the VALID CROSS-DOMAIN ONTOLOGY. Prefer the narrowest valid mapping present in the previous result: HS4_CODE, then COMMODITY_GROUP, then ORIGIN_COUNTRY.',
-    'If the previous governed Nova result already contains sufficient internal evidence for the requested decision, use reuse_previous rather than querying trade again.',
+    'Treat previous_semantic_domain, previous_semantic_view, previous_result_columns and previous_result_sample as authoritative provenance for the immediately prior governed evidence.',
+    'If the previous governed result is Nova operational evidence and already contains sufficient facts for the current follow-up, choose reuse_previous. Do not switch back to the trade domain merely because the conversation originally began with an external trade or weather question.',
+    'Choose query_source only when the current question genuinely requires new governed evidence that is not already present in the previous result.',
+    'Choose map_previous_to_target only when the answer requires crossing semantic domains and a valid ontology key exists in the previous result.',
     'If the user refers to prior context and there is no usable previous result, use evidence_strategy needs_context.',
     'semantic_query must be a self-contained natural-language request for Cortex Analyst with the intended metric, dimensions, filters and period. Do not generate SQL.',
     aiDomainContract()
@@ -245,6 +248,7 @@ export default async function handler(req,res){
       previous_question:previousQuestion||null,
       previous_answer:previousAnswer||null,
       previous_result_columns:previousColumns,
+      previous_result_sample:compactAiResult(previousResult&&previousResult.result||{},8),
       previous_intents:previousIntents,
       previous_semantic_domain:previousSemanticDomain||null,
       previous_semantic_view:previousSemanticView||null,
@@ -462,8 +466,49 @@ export default async function handler(req,res){
         executionWarning:''
       });
     }catch(err){
-      aiPlannerWarning='AI orchestration fallback: '+(err&&err.message?err.message:'unknown orchestration error');
+      aiPlannerWarning='AI orchestration failure: '+(err&&err.message?err.message:'unknown orchestration error');
+      if(hasFollowupContext){
+        return send(res,200,{
+          source:'snowflake-ai-orchestration-error',
+          requestId:'ai-followup-orchestration-error',
+          semanticView:previousSemanticView||'',
+          semanticDomain:previousSemanticDomain||'conversation',
+          intents:['ai_orchestration_error'],
+          datasetCoverage:{dimensions:0,metrics:0},
+          warehouse,
+          text:'I could not complete the governed AI follow-up reliably, so I did not fall back to a different semantic domain. Please retry this turn.',
+          sql:'',
+          suggestions:[],
+          result:null,
+          queryPlan:aiPlan||null,
+          orchestrationPlan:aiPlan||null,
+          aiOrchestrated:true,
+          fallbackUsed:false,
+          followupContextUsed:true,
+          executionWarning:aiPlannerWarning
+        });
+      }
     }
+  }else if(hasFollowupContext){
+    return send(res,200,{
+      source:'snowflake-ai-planner-error',
+      requestId:'ai-followup-planner-error',
+      semanticView:previousSemanticView||'',
+      semanticDomain:previousSemanticDomain||'conversation',
+      intents:['ai_planner_error'],
+      datasetCoverage:{dimensions:0,metrics:0},
+      warehouse,
+      text:'I could not interpret this follow-up with the AI planner reliably, so I did not route it to a different dataset. Please retry this turn.',
+      sql:'',
+      suggestions:[],
+      result:null,
+      queryPlan:null,
+      orchestrationPlan:null,
+      aiOrchestrated:true,
+      fallbackUsed:false,
+      followupContextUsed:true,
+      executionWarning:aiPlannerWarning
+    });
   }
 
   const plan=resolveQuestionPlan(question,{
