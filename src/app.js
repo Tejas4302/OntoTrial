@@ -547,7 +547,8 @@ async function revealNarrative(container,html){
 }
 let analystStorageIdentity='';
 function analystWorkspaceIdentity(session=window.__ONTOTRAIL_SESSION||{}){return String(session.email||`${session.tenant||'workspace'}:${session.role||'user'}`).toLowerCase().replace(/[^a-z0-9_-]+/g,'_');}
-function analystWorkspaceKey(identity=analystStorageIdentity||analystWorkspaceIdentity()){return `ontotrail_analyst_workspace_v2_${identity}`;}
+function analystWorkspaceKey(identity=analystStorageIdentity||analystWorkspaceIdentity()){return `ontotrail_analyst_workspace_v3_${identity}`;}
+function previousAnalystWorkspaceKey(identity=analystStorageIdentity||analystWorkspaceIdentity()){return `ontotrail_analyst_workspace_v2_${identity}`;}
 function legacyAnalystWorkspaceKey(identity=analystStorageIdentity||analystWorkspaceIdentity()){return `ontotrail_analyst_workspace_v1_${identity}`;}
 const AUTO_ANALYST_PROJECTS=Object.freeze({
  overview:{key:'control-tower',name:'Control Tower'},
@@ -635,8 +636,24 @@ function loadAnalystWorkspace(){
  analystStorageIdentity=nextIdentity;
  try{
   storage.removeItem?.(legacyAnalystWorkspaceKey(nextIdentity));
-  const raw=storage.getItem(analystWorkspaceKey(nextIdentity));
-  analystWorkspace=normalizeAnalystWorkspace(raw?JSON.parse(raw):null);
+  const currentRaw=storage.getItem(analystWorkspaceKey(nextIdentity));
+  if(currentRaw){
+   analystWorkspace=normalizeAnalystWorkspace(JSON.parse(currentRaw));
+   return;
+  }
+
+  // One-time chat reset for the v3 workspace. Preserve project shells, discard all prior chat threads.
+  let projects=[];
+  const previousRaw=storage.getItem(previousAnalystWorkspaceKey(nextIdentity));
+  if(previousRaw){
+   try{
+    const previous=JSON.parse(previousRaw);
+    if(Array.isArray(previous?.projects))projects=previous.projects;
+   }catch{}
+  }
+  storage.removeItem?.(previousAnalystWorkspaceKey(nextIdentity));
+  analystWorkspace=normalizeAnalystWorkspace({projects,threads:[],activeThreadId:''});
+  saveAnalystWorkspace();
  }catch{analystWorkspace=normalizeAnalystWorkspace(null);}
 }
 function saveAnalystWorkspace(){
