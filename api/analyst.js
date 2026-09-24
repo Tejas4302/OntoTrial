@@ -63,47 +63,95 @@ function parseCortexJson(body){
   if(match){try{return JSON.parse(match[0]);}catch{}}
   throw Error('Cortex AI returned invalid structured output.');
 }
-async function cortexAiJson(base,pat,model,system,user,schema,maxTokens){
-  const endpoint=base+'/api/v2/cortex/v1/chat/completions';
-  const baseBody={
-    model,
-    temperature:0,
-    max_tokens:maxTokens||1600,
-    messages:[
-      {role:'system',content:system},
-      {role:'user',content:user}
-    ]
-  };
-
-  // Prefer structured outputs, but retry with plain JSON instructions because
-  // model/account support for json_schema can vary.
-  const attempts=[
-    {...baseBody,response_format:{type:'json_schema',json_schema:{name:'ontotrail_output',strict:true,schema}}},
-    {...baseBody,messages:[
-      {role:'system',content:system+'\nReturn ONLY a valid JSON object. Do not use markdown fences. The JSON must match this schema: '+JSON.stringify(schema)},
-      {role:'user',content:user}
-    ]}
-  ];
-
-  let lastError='Cortex AI request failed.';
-  for(const bodyPayload of attempts){
+function parseJsonString(raw){
+  if(raw&&typeof raw==='object')return raw;
+  const text=String(raw||'').trim();
+  if(!text)throw Error('Cortex AI returned an empty SQL completion.');
+  try{return JSON.parse(text);}catch{}
+  const match=text.match(/\{[\s\S]*\}/);
+  if(match){try{return JSON.parse(match[0]);}catch{}}
+  throw Error('Cortex AI SQL fallback returned invalid JSON.');
+}
+function sqlString(value){return "'"+String(value).replace(/'/g,"''")+"'";}
+async function cortexAiJsonViaSql(base,pat,warehouse,models,system,user,schema,maxTokens){
+  const prompt=[
+    system,
+    '',
+    'Return ONLY a valid JSON object with no markdown fences.',
+    'The JSON must match this schema exactly:',
+    JSON.stringify(schema),
+    '',
+    'INPUT:',
+    user
+  ].join('\n');
+  let lastError='Cortex AI SQL fallback failed.';
+  for(const model of models){
+    if(!model)continue;
     try{
-      const response=await fetchWithTimeout(endpoint,{
-        method:'POST',
-        headers:snowHeaders(pat),
-        body:JSON.stringify(bodyPayload)
-      },50000);
-      const body=await response.json().catch(()=>({}));
-      if(!response.ok){
-        lastError=(body&&body.message)||(body&&body.error&&body.error.message)||('Cortex AI returned '+response.status+'.');
-        continue;
-      }
-      return parseCortexJson(body);
+      const statement=
+        'SELECT AI_COMPLETE('+
+        'model => '+sqlString(model)+', '+
+        'prompt => '+sqlString(prompt)+', '+
+        "model_parameters => {'temperature': 0, 'max_tokens': "+Number(maxTokens||1600)+"}"+
+        ') AS RESPONSE';
+      const result=await executeSql(base,pat,warehouse,statement);
+      const row=result&&result.rows&&result.rows[0];
+      if(!row)throw Error('AI_COMPLETE returned no rows.');
+      const col=(result.columns||[])[0]||'RESPONSE';
+      return parseJsonString(row[col]);
     }catch(err){
       lastError=err&&err.message?err.message:lastError;
     }
   }
   throw Error(lastError);
+}
+async function cortexAiJson(base,pat,warehouse,model,system,user,schema,maxTokens){
+  const endpoint=base+'/api/v2/cortex/v1/chat/completions';
+  const models=[...new Set([model,'openai-gpt-5-mini','openai-gpt-5-nano','mistral-large2','llama3.1-8b'].filter(Boolean))];
+  let lastError='Cortex AI request failed.';
+
+  for(const candidate of models){
+    const baseBody={
+      model:candidate,
+      temperature:0,
+      max_completion_tokens:maxTokens||1600,
+      messages:[
+        {role:'system',content:system},
+        {role:'user',content:user}
+      ]
+    };
+    const attempts=[
+      {...baseBody,response_format:{type:'json_schema',json_schema:{name:'ontotrail_output',strict:true,schema}}},
+      {...baseBody,messages:[
+        {role:'system',content:system+'\nReturn ONLY a valid JSON object. Do not use markdown fences. The JSON must match this schema: '+JSON.stringify(schema)},
+        {role:'user',content:user}
+      ]}
+    ];
+
+    for(const bodyPayload of attempts){
+      try{
+        const response=await fetchWithTimeout(endpoint,{
+          method:'POST',
+          headers:snowHeaders(pat),
+          body:JSON.stringify(bodyPayload)
+        },50000);
+        const body=await response.json().catch(()=>({}));
+        if(!response.ok){
+          lastError=(body&&body.message)||(body&&body.error&&body.error.message)||('Cortex AI returned '+response.status+'.');
+          continue;
+        }
+        return parseCortexJson(body);
+      }catch(err){
+        lastError=err&&err.message?err.message:lastError;
+      }
+    }
+  }
+
+  try{
+    return await cortexAiJsonViaSql(base,pat,warehouse,models,system,user,schema,maxTokens);
+  }catch(err){
+    throw Error((err&&err.message?err.message:lastError)+' | REST fallback: '+lastError);
+  }
 }
 function aiDomainContract(){
   return [
@@ -118,7 +166,7 @@ function aiDomainContract(){
     'A shared country or commodity means contextual overlap, not proof of causation or confirmed disruption.'
   ].join('\n');
 }
-async function aiPlanQuestion(base,pat,model,input){
+async function aiPlanQuestion(base,pat,warehouse,model,input){
   const schema={
     type:'object',additionalProperties:false,
     properties:{
@@ -159,7 +207,7 @@ async function aiPlanQuestion(base,pat,model,input){
     'semantic_query must be a self-contained natural-language request for Cortex Analyst with the intended metric, dimensions, filters and period. Do not generate SQL.',
     aiDomainContract()
   ].join('\n');
-  return cortexAiJson(base,pat,model,system,JSON.stringify(input),schema,1600);
+  return cortexAiJson(base,pat,warehouse,model,system,JSON.stringify(input),schema,1600);
 }
 function selectAiMapping(mappingKeys,columns,rows){
   const wanted=new Set((mappingKeys||[]).map(function(x){return String(x).toUpperCase();}));
@@ -184,7 +232,7 @@ function compactAiResult(result,limit){
   });
   return {columns:cols,rows};
 }
-async function aiSynthesize(base,pat,model,input){
+async function aiSynthesize(base,pat,warehouse,model,input){
   const schema={
     type:'object',additionalProperties:false,
     properties:{
@@ -208,7 +256,7 @@ async function aiSynthesize(base,pat,model,input){
     'Never invent a cause, forecast, supplier fact, event, owner, or risk absent from the evidence.',
     aiDomainContract()
   ].join('\n');
-  const out=await cortexAiJson(base,pat,model,system,JSON.stringify(input),schema,1400);
+  const out=await cortexAiJson(base,pat,warehouse,model,system,JSON.stringify(input),schema,1400);
   out.combined_answer=[out.answer,out.decision_implication?('Decision implication: '+out.decision_implication):''].filter(Boolean).join('\n\n');
   return out;
 }
@@ -243,7 +291,7 @@ export default async function handler(req,res){
   let aiPlan=null;
   let aiPlannerWarning='';
   try{
-    aiPlan=await aiPlanQuestion(base,pat,aiModel,{
+    aiPlan=await aiPlanQuestion(base,pat,warehouse,aiModel,{
       question,
       previous_question:previousQuestion||null,
       previous_answer:previousAnswer||null,
@@ -281,7 +329,7 @@ export default async function handler(req,res){
   if(aiPlan){
     try{
       if(aiPlan.evidence_strategy==='reuse_previous'&&previousRows.length){
-        const synthesis=await aiSynthesize(base,pat,aiModel,{
+        const synthesis=await aiSynthesize(base,pat,warehouse,aiModel,{
           current_question:question,
           orchestration_plan:aiPlan,
           previous_question:previousQuestion||null,
@@ -313,7 +361,7 @@ export default async function handler(req,res){
       }
 
       if(aiPlan.request_type==='needs_context'){
-        const synthesis=await aiSynthesize(base,pat,aiModel,{
+        const synthesis=await aiSynthesize(base,pat,warehouse,aiModel,{
           current_question:question,
           orchestration_plan:aiPlan,
           previous_question:previousQuestion||null,
@@ -347,7 +395,7 @@ export default async function handler(req,res){
       if(aiPlan.evidence_strategy==='map_previous_to_target'&&aiPlan.target_domain==='nova'&&previousRows.length){
         const mapping=selectAiMapping(aiPlan.mapping_keys,previousColumns,previousRows);
         if(!mapping){
-          const synthesis=await aiSynthesize(base,pat,aiModel,{
+          const synthesis=await aiSynthesize(base,pat,warehouse,aiModel,{
             current_question:question,
             orchestration_plan:aiPlan,
             previous_question:previousQuestion||null,
@@ -379,7 +427,7 @@ export default async function handler(req,res){
         }
         const mappedSql=buildAiNovaMappingQuery(novaSemanticView,mapping);
         const mappedResult=await executeSql(base,pat,warehouse,mappedSql);
-        const synthesis=await aiSynthesize(base,pat,aiModel,{
+        const synthesis=await aiSynthesize(base,pat,warehouse,aiModel,{
           current_question:question,
           orchestration_plan:aiPlan,
           previous_question:previousQuestion||null,
@@ -437,7 +485,7 @@ export default async function handler(req,res){
       const parsedAi=normalizeAnalyst(analystBody);
       const aiSql=safeSelect(parsedAi.sql);
       const aiResult=aiSql?await executeSql(base,pat,warehouse,aiSql):null;
-      const synthesis=await aiSynthesize(base,pat,aiModel,{
+      const synthesis=await aiSynthesize(base,pat,warehouse,aiModel,{
         current_question:question,
         orchestration_plan:aiPlan,
         previous_question:previousQuestion||null,
