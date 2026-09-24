@@ -280,6 +280,43 @@ async function runSemanticAnalyst(base,pat,semanticView,prompt){
     requestId:body.request_id||response.headers.get('x-snowflake-request-id')||''
   };
 }
+
+function looksLikeInterpretationOnly(text){
+  return /this is (our|my) interpretation of your question|interpretation of your question|here is how i interpreted|the question is asking/i.test(String(text||''));
+}
+async function directAnswerFromAnalystEvidence({base,pat,semanticView,question,previousQuestion,previousAnswer,result,semanticDomain,mapping}){
+  if(!result||!Array.isArray(result.rows)||!result.rows.length)return '';
+  const evidence=compactAiResult(result,12);
+  const prompt=[
+    'ONTO TRAIL FINAL ANSWER',
+    'Current user question: '+question,
+    previousQuestion?'Previous user question: '+previousQuestion:'',
+    previousAnswer?'Previous governed answer: '+previousAnswer:'',
+    'Selected semantic domain: '+semanticDomain,
+    mapping?'Governed mapping used: '+mapping.key+' = '+mapping.values.join(', '):'',
+    'Governed evidence returned by Snowflake: '+JSON.stringify(evidence),
+    '',
+    'Answer the current user question DIRECTLY from the governed evidence above.',
+    'Do not restate or reinterpret the user question.',
+    'Do not say "This is our interpretation of your question".',
+    'Do not describe a query plan or list requested fields.',
+    'Do not invent facts, causation, forecasts, disruptions, owners or recommendations.',
+    'Distinguish external Marketplace context from Nova operational evidence.',
+    'If the evidence shows exposure but not confirmed disruption, say that clearly.',
+    'For an operational implication, explain what the evidence means for Nova in concise business language.',
+    'For a decision question, recommend only bounded next steps justified by the evidence; otherwise say what should be checked next.',
+    'Return 2 to 4 concise paragraphs. No SQL is needed because the governed rows are already supplied.'
+  ].filter(Boolean).join('\n');
+
+  const first=await runSemanticAnalyst(base,pat,semanticView,prompt);
+  let text=String(first.parsed&&first.parsed.text||'').trim();
+  if(text&&!looksLikeInterpretationOnly(text))return text;
+
+  const retryPrompt=prompt+'\n\nSTRICT FINAL-ANSWER RULE: start with the business conclusion itself. Do not output an interpretation, semantic request, query plan, or field list.';
+  const retry=await runSemanticAnalyst(base,pat,semanticView,retryPrompt);
+  text=String(retry.parsed&&retry.parsed.text||'').trim();
+  return looksLikeInterpretationOnly(text)?'':text;
+}
 function contextQuestionTokens(question){
   const stop=new Set(['what','which','that','this','these','those','does','mean','with','from','into','have','will','would','could','should','about','there','their','them','then','than','your','ours','take','action']);
   return [...new Set(String(question||'').toLowerCase().match(/[a-z0-9]+/g)||[])]
@@ -287,9 +324,10 @@ function contextQuestionTokens(question){
 }
 function analystCandidateScore(candidate,question,previousSemanticDomain,mapping){
   let score=0;
-  if(candidate.sql)score+=2;
+  if(candidate.sql)score+=1;
   const rows=candidate.result&&candidate.result.rows||[];
-  if(rows.length)score+=5;
+  if(rows.length)score+=8;
+  else if(candidate.sql)score-=3;
   const text=String(candidate.parsed&&candidate.parsed.text||'');
   if(/out of scope|outside the scope|cannot answer|not available in this semantic/i.test(text))score-=8;
   const haystack=((candidate.result&&candidate.result.columns||[]).join(' ')+' '+text).toLowerCase();
@@ -371,9 +409,27 @@ async function contextualAnalystOrchestration({base,pat,warehouse,question,previ
   if(!candidates.length)throw Error('Neither governed Cortex Analyst semantic view could evaluate this follow-up.');
   candidates.sort(function(a,b){return b.score-a.score;});
   const chosen=candidates[0];
-  const chosenText=String(chosen.parsed&&chosen.parsed.text||'').trim();
-  if(chosen.score<0||/out of scope/i.test(chosenText)){
-    throw Error('No governed semantic view could answer this follow-up with sufficient evidence.');
+  const initialText=String(chosen.parsed&&chosen.parsed.text||'').trim();
+  if(chosen.score<0||/out of scope/i.test(initialText)||!chosen.result?.rows?.length){
+    throw Error('No governed semantic view could answer this follow-up with sufficient governed rows.');
+  }
+
+  let chosenText='';
+  try{
+    chosenText=await directAnswerFromAnalystEvidence({
+      base,pat,
+      semanticView:chosen.semanticView,
+      question,
+      previousQuestion,
+      previousAnswer,
+      result:chosen.result,
+      semanticDomain:chosen.semanticDomain,
+      mapping
+    });
+  }catch{}
+  if(!chosenText&&!looksLikeInterpretationOnly(initialText))chosenText=initialText;
+  if(!chosenText){
+    throw Error('Cortex Analyst produced governed rows but did not return a direct business answer.');
   }
 
   return {
