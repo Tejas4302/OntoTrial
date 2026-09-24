@@ -385,7 +385,7 @@ function analystNarrative(question,result,cortexText='',meta={}){
 
     const hasConfirmedStress=rows.some(r=>delay(r)>0||outstanding(r)>0||/HIGH/i.test(risk(r))||(cover(r)!==null&&cover(r)<7));
     let answer=hasConfirmedStress
-      ? 'The earlier external risk signal has operational relevance for Nova because it overlaps with internal supply vulnerability, but the returned evidence does not by itself prove a disruption. '
+      ? 'The external weather-risk signal is relevant to Nova because it overlaps with internal supply exposure, although the current operational data does not indicate a confirmed disruption. '
       : 'The earlier external risk signal creates a potential continuity concern for Nova, but the returned operational data does not show a confirmed disruption. ';
 
     answer+=`The most notable exposure is <strong>${name(top)}</strong>`;
