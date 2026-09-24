@@ -131,9 +131,10 @@ async function aiPlanQuestion(base,pat,model,input){
       required_dimensions:{type:'array',items:{type:'string'},maxItems:12},
       required_metrics:{type:'array',items:{type:'string'},maxItems:12},
       caution:{type:'string'},
-      answer_mode:{type:'string',enum:['analysis','decision_support']}
+      answer_mode:{type:'string',enum:['analysis','decision_support']},
+      evidence_strategy:{type:'string',enum:['query_source','reuse_previous','map_previous_to_target','needs_context']}
     },
-    required:['request_type','source_domain','target_domain','semantic_query','answer_goal','mapping_keys','required_dimensions','required_metrics','caution','answer_mode']
+    required:['request_type','source_domain','target_domain','semantic_query','answer_goal','mapping_keys','required_dimensions','required_metrics','caution','answer_mode','evidence_strategy']
   };
   const system=[
     'You are the OntoTrail AI Orchestrator for governed supply-chain analytics.',
@@ -142,11 +143,16 @@ async function aiPlanQuestion(base,pat,model,input){
     'In this workspace, us/our/our operations means Nova Mobility.',
     'For follow-up questions, use the previous governed result. Never invent a relationship.',
     'Infer whether the user wants analysis or decision support from meaning and conversation context, not exact wording.',
-    'If the user asks what the company should do, what action to take, how to respond, mitigate, prioritize, or decide, set answer_mode to decision_support.',
-    'Decision support for Nova Mobility must use Nova operational evidence. External trade/weather evidence alone can identify context or exposure, but cannot justify a company action.',
-    'Therefore, when a decision-support follow-up is based on prior external Marketplace/trade evidence and prior governed rows are available, plan a cross_domain request from trade to nova using only a valid shared ontology key.',
+    'Choose evidence_strategy based on what evidence is actually required:',
+    '- query_source: the current question can be answered by querying one governed semantic domain.',
+    '- reuse_previous: the previous governed result already contains the evidence needed to answer this follow-up.',
+    '- map_previous_to_target: the current question requires connecting the previous governed result to another domain through a valid ontology key.',
+    '- needs_context: the question depends on missing prior context.',
+    'Do not choose a strategy because of a specific phrase. Choose it from the semantic information need.',
+    'Decision support for Nova Mobility must ultimately be grounded in Nova operational evidence. External trade/weather evidence can provide context, but not by itself justify a company action.',
     'Use only mappings in the VALID CROSS-DOMAIN ONTOLOGY. Prefer the narrowest valid mapping present in the previous result: HS4_CODE, then COMMODITY_GROUP, then ORIGIN_COUNTRY.',
-    'If the user refers to prior context and there is no usable previous result, return needs_context.',
+    'If the previous governed Nova result already contains sufficient internal evidence for the requested decision, use reuse_previous rather than querying trade again.',
+    'If the user refers to prior context and there is no usable previous result, use evidence_strategy needs_context.',
     'semantic_query must be a self-contained natural-language request for Cortex Analyst with the intended metric, dimensions, filters and period. Do not generate SQL.',
     aiDomainContract()
   ].join('\n');
@@ -248,69 +254,60 @@ export default async function handler(req,res){
     aiPlannerWarning=err&&err.message?err.message:'AI planner unavailable.';
   }
 
-  const previousLooksNova=/nova/i.test(previousSemanticDomain||previousSemanticView)||
-    previousColumns.some(function(c){return /SUPPLIER_NAME|MATERIAL_NAME|PLANT_NAME|SHIPMENT_ID|PO_ID|OPERATIONAL_RISK|INVENTORY_RISK/i.test(String(c));});
-  const previousLooksTrade=/trade|marketplace/i.test(previousSemanticDomain||previousSemanticView)||
-    previousColumns.some(function(c){return /IMPORT_VALUE|EXPORT_VALUE|SEA_DEPENDENCY|AIR_DEPENDENCY|TRADE_WEIGHTED_WEATHER|ORIGIN_COUNTRY|COMMODITY_HEADING/i.test(String(c));});
-
-  if(aiPlan&&aiPlan.answer_mode==='decision_support'&&previousRows.length&&previousLooksTrade&&!previousLooksNova){
-    const availableMappings=AI_MAPPING_CATALOG
-      .filter(function(m){return previousColumns.some(function(c){return m.source.test(String(c));});})
-      .sort(function(a,b){return a.priority-b.priority;})
-      .map(function(m){return m.key;});
-    aiPlan=Object.assign({},aiPlan,{
-      request_type:'cross_domain',
-      source_domain:'trade',
-      target_domain:'nova',
-      mapping_keys:(aiPlan.mapping_keys&&aiPlan.mapping_keys.length)?aiPlan.mapping_keys:availableMappings,
-      caution:[aiPlan.caution,'Company recommendations must be based on Nova operational evidence; external evidence is context only.'].filter(Boolean).join(' ')
-    });
-  }
-
-  if(aiPlan&&aiPlan.answer_mode==='decision_support'&&previousRows.length&&previousLooksNova){
-    try{
-      const decisionPlan=Object.assign({},aiPlan,{
-        request_type:'single_domain',
-        source_domain:'nova',
-        target_domain:'none',
-        caution:[aiPlan.caution,'Use the existing Nova operational evidence from the immediately previous turn. Do not fall back to the trade semantic view.'].filter(Boolean).join(' ')
+  if(aiPlan){
+    if(aiPlan.evidence_strategy==='needs_context'){
+      aiPlan=Object.assign({},aiPlan,{request_type:'needs_context'});
+    }
+    if(aiPlan.evidence_strategy==='reuse_previous'&&!previousRows.length){
+      aiPlan=Object.assign({},aiPlan,{
+        request_type:'needs_context',
+        evidence_strategy:'needs_context',
+        caution:[aiPlan.caution,'The requested follow-up depends on previous governed evidence, but no previous governed rows are available.'].filter(Boolean).join(' ')
       });
-      const synthesis=await aiSynthesize(base,pat,aiModel,{
-        current_question:question,
-        orchestration_plan:decisionPlan,
-        previous_question:previousQuestion||null,
-        previous_answer:previousAnswer||null,
-        mapping:null,
-        previous_governed_evidence:compactAiResult(previousResult&&previousResult.result||{}),
-        current_governed_evidence:compactAiResult(previousResult&&previousResult.result||{})
+    }
+    if(aiPlan.evidence_strategy==='map_previous_to_target'&&!previousRows.length){
+      aiPlan=Object.assign({},aiPlan,{
+        request_type:'needs_context',
+        evidence_strategy:'needs_context',
+        caution:[aiPlan.caution,'Cross-domain mapping requires previous governed rows, but none are available.'].filter(Boolean).join(' ')
       });
-      return send(res,200,{
-        source:'snowflake-ai-orchestrated',
-        requestId:'ai-decision-support-from-nova-context',
-        semanticView:previousSemanticView||novaSemanticView,
-        semanticDomain:'nova-operations',
-        intents:['decision_support'],
-        datasetCoverage:{dimensions:DATASET_DOMAINS.nova.dimensions.length,metrics:DATASET_DOMAINS.nova.metrics.length},
-        warehouse,
-        text:synthesis.combined_answer,
-        sql:'',
-        suggestions:[],
-        result:previousResult&&previousResult.result?previousResult.result:null,
-        queryPlan:decisionPlan,
-        orchestrationPlan:decisionPlan,
-        aiOrchestrated:true,
-        reusedPriorEvidence:true,
-        fallbackUsed:false,
-        followupContextUsed:true,
-        executionWarning:''
-      });
-    }catch(err){
-      aiPlannerWarning='AI decision-support synthesis fallback: '+(err&&err.message?err.message:'unknown synthesis error');
     }
   }
 
   if(aiPlan){
     try{
+      if(aiPlan.evidence_strategy==='reuse_previous'&&previousRows.length){
+        const synthesis=await aiSynthesize(base,pat,aiModel,{
+          current_question:question,
+          orchestration_plan:aiPlan,
+          previous_question:previousQuestion||null,
+          previous_answer:previousAnswer||null,
+          mapping:null,
+          previous_governed_evidence:compactAiResult(previousResult&&previousResult.result||{}),
+          current_governed_evidence:compactAiResult(previousResult&&previousResult.result||{})
+        });
+        return send(res,200,{
+          source:'snowflake-ai-orchestrated',
+          requestId:'ai-reuse-previous-evidence',
+          semanticView:previousSemanticView||'',
+          semanticDomain:previousSemanticDomain||'conversation',
+          intents:[aiPlan.answer_mode||'analysis'],
+          datasetCoverage:{dimensions:0,metrics:0},
+          warehouse,
+          text:synthesis.combined_answer,
+          sql:'',
+          suggestions:[],
+          result:previousResult&&previousResult.result?previousResult.result:null,
+          queryPlan:aiPlan,
+          orchestrationPlan:aiPlan,
+          aiOrchestrated:true,
+          reusedPriorEvidence:true,
+          fallbackUsed:false,
+          followupContextUsed:true,
+          executionWarning:''
+        });
+      }
+
       if(aiPlan.request_type==='needs_context'){
         const synthesis=await aiSynthesize(base,pat,aiModel,{
           current_question:question,
@@ -343,7 +340,7 @@ export default async function handler(req,res){
         });
       }
 
-      if(aiPlan.request_type==='cross_domain'&&aiPlan.target_domain==='nova'&&previousRows.length){
+      if(aiPlan.evidence_strategy==='map_previous_to_target'&&aiPlan.target_domain==='nova'&&previousRows.length){
         const mapping=selectAiMapping(aiPlan.mapping_keys,previousColumns,previousRows);
         if(!mapping){
           const synthesis=await aiSynthesize(base,pat,aiModel,{
@@ -409,6 +406,9 @@ export default async function handler(req,res){
         });
       }
 
+      if(aiPlan.evidence_strategy!=='query_source'){
+        throw Error('AI orchestration produced an unsupported evidence strategy for this request.');
+      }
       const aiDomain=aiPlan.source_domain==='nova'?'nova':'trade';
       const aiSemanticView=aiDomain==='nova'?novaSemanticView:tradeSemanticView;
       const aiProfile=DATASET_DOMAINS[aiDomain];
