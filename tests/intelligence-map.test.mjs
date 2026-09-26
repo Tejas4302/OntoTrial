@@ -259,3 +259,13 @@ test('operational follow-up does not hard-code signal types',()=>{
   assert.equal(Object.hasOwn(p,'signal'),false);
   assert.equal(Object.hasOwn(p,'mode'),false);
 });
+
+
+test('explicit external-context Nova question is treated as standalone analysis',()=>{
+  const p=resolveQuestionPlan('How could the current external weather and TradePrism transport context affect Nova Mobility exposure to Aichi Drive Technologies?',{
+    previousQuestion:'Why is Siam Thermal Solutions a supply-chain risk for Nova Mobility?',
+    previousPlan:{type:'semantic_analyst'},
+    hasRows:true
+  });
+  assert.equal(p.type,'semantic_analyst');
+});
