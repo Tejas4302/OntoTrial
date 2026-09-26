@@ -35,7 +35,7 @@ export function overview(ctx){
   <article class="metric"><div class="metric-label">Minimum inventory cover ${icon('box')}</div><strong class="metric-number">${Number(s.minDaysOfCover||0).toFixed(1)}<small> days</small></strong><span>${Number(s.lowCoverLineCount||0)} PO lines below 7 days</span></article>
   <article class="metric"><div class="metric-label">External-risk-linked PO value ${icon('network')}</div><strong class="metric-number teal-number">${usd(s.weatherLinkedPoValueUsd)}</strong><span>Nova PO value linked to elevated Pelmorex signals</span></article>
  </div>
- <section class="panel"><div class="panel-heading"><div><h2>Top risks requiring attention</h2><p>Executive prioritization only. Open Nova operations for the underlying supplier, PO, shipment and inventory records.</p></div><button class="text-button" data-action="go-operations">Open Nova operations ${icon('arrow')}</button></div>
+ <section class="panel control-tower-risks"><div class="panel-heading"><div><h2>Top risks requiring attention</h2><p>Executive prioritization only. Open Nova operations for the underlying supplier, PO, shipment and inventory records.</p></div><button class="text-button" data-action="go-operations">Open Nova operations ${icon('arrow')}</button></div>
   <div class="saved-grid">${attention.map(x=>`<article class="saved-card"><span class="eyebrow">${e(x.kicker)}</span><h3>${e(x.title)}</h3><p>${e(x.body)}</p><button class="secondary small" data-question="${e(x.question)}">Investigate with Cortex</button></article>`).join('')||'<p>No priority risks are currently available.</p>'}</div>
  </section>
  <div class="overview-grid control-tower-split">
