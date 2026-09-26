@@ -1305,3 +1305,76 @@ body.analyst-mode .analyst-table-wrap,
 body.analyst-mode .analyst-viz,
 body.analyst-mode .analyst-sql,
 body.analyst-mode .analyst-suggestions{margin-top:8px;margin-bottom:10px}
+
+
+/* v3.0.2 — Control Tower density + spacing fixes */
+.control-tower-risks .saved-grid{
+  align-items:start;
+  padding:0 22px 20px;
+}
+.control-tower-risks .saved-card{
+  display:flex;
+  flex-direction:column;
+  height:auto;
+  min-height:0;
+  padding:18px;
+}
+.control-tower-risks .saved-card .eyebrow{
+  margin-bottom:10px;
+}
+.control-tower-risks .saved-card h3{
+  margin:0 0 8px;
+  line-height:1.35;
+}
+.control-tower-risks .saved-card p{
+  margin:0 0 16px;
+  line-height:1.5;
+}
+.control-tower-risks .saved-card>button{
+  margin-top:4px;
+  align-self:flex-start;
+}
+
+.control-tower-split .guide-columns{
+  padding:0 22px 22px;
+  gap:26px;
+}
+.control-tower-split .guide-columns>div{
+  min-width:0;
+}
+.control-tower-split .guide-columns h3{
+  font-size:14px;
+  line-height:1.35;
+  margin:0 0 4px;
+}
+.control-tower-split .guide-columns h3:not(:first-child){
+  margin-top:14px;
+}
+.control-tower-split .guide-columns p{
+  margin:0;
+  font-size:12px;
+  line-height:1.55;
+  color:var(--muted);
+  overflow-wrap:anywhere;
+}
+.control-tower-split .supplier-row{
+  min-height:0;
+  padding:12px 22px;
+}
+.control-tower-split .supplier-copy strong{
+  line-height:1.35;
+}
+.control-tower-split .supplier-copy small{
+  line-height:1.45;
+}
+.control-tower-split .panel-heading{
+  padding-bottom:14px;
+}
+
+@media(max-width:820px){
+  .control-tower-risks .saved-grid,
+  .control-tower-split .guide-columns{
+    padding-left:16px;
+    padding-right:16px;
+  }
+}
