@@ -614,51 +614,6 @@ function analystNarrative(question,result,cortexText='',meta={}){
   const shipmentCol=find([/SHIPMENT_ID/]),statusCol=find([/SHIPMENT_STATUS/]),etaCol=find([/ETA_DATE/]),supplierCol=find([/SUPPLIER_NAME/]),materialCol=find([/MATERIAL_NAME/]),outstandingCol=find([/OUTSTANDING_QUANTITY/]);
   if(shipmentCol&&m.rows.length){const delayed=m.rows.filter(r=>/DELAYED/i.test(String(r[statusCol]||'')));const focus=delayed.length?delayed:m.rows;const leaders=focus.slice(0,5).map(r=>{const bits=[];if(statusCol&&r[statusCol])bits.push(e(r[statusCol]));if(etaCol&&r[etaCol])bits.push(`ETA ${e(r[etaCol])}`);if(outstandingCol&&analystNumber(r[outstandingCol])!==null)bits.push(`${analystFormat(outstandingCol,r[outstandingCol])} outstanding`);if(supplierCol&&r[supplierCol])bits.push(e(r[supplierCol]));if(materialCol&&r[materialCol])bits.push(e(r[materialCol]));return `<strong>${e(r[shipmentCol])}</strong> (${bits.join(' · ')})`;}).join(', ');return `${delayed.length?`${delayed.length} delayed shipment${delayed.length===1?'':'s'} are visible in the returned evidence. `:''}${leaders?`Priority shipments: ${leaders}.`:''} Use the shipment status and ETA as the operational source of truth; external market dependency is context only.`;}
  }
- const supplierRiskIntent=(/\b(suppliers?|vendors?)\b/i.test(q)||/\b[A-Z][A-Za-z&.' -]{2,}\b/.test(q))&&/\b(worry|risk|risky|highest|most|rank|priority|exposure|attention|why)\b/i.test(q)&&/\b(supplier|vendor|mobility|purchase order|\bpo\b|inventory|material|supply[- ]chain)\b/i.test(q);
- if(supplierRiskIntent){
-  const cols=m.columns.map(c=>String(c));const find=(patterns)=>cols.find(c=>{const u=c.toUpperCase();return patterns.some(p=>p.test(u));});
-  const supplierCol=find([/SUPPLIER_NAME/,/^SUPPLIER$/,/VENDOR_NAME/]);
-  if(supplierCol&&m.rows.length){
-   const poValueCol=find([/TOTAL_PO_VALUE_USD/,/^PO_VALUE_USD$/,/PO_VALUE/]);
-   const delayedCountCol=find([/DELAYED_PO_COUNT/]);
-   const delayedValueCol=find([/DELAYED_PO_VALUE_USD/]);
-   const highRiskValueCol=find([/HIGH_OPERATIONAL_RISK_PO_VALUE_USD/]);
-   const weatherValueCol=find([/WEATHER_LINKED_PO_VALUE_USD/]);
-   const coverCol=find([/MINIMUM_DAYS_OF_COVER/,/MIN.*DAYS.*COVER/,/DAYS_OF_COVER/]);
-   const tierCol=find([/SUPPLIER_TIER/]),criticalityCol=find([/SUPPLIER_CRITICALITY/]),countryCol=find([/ORIGIN_COUNTRY/]),riskLevelCol=find([/OPERATIONAL_RISK_LEVEL/]);
-   const norm=(value,max,invert=false)=>{const n=analystNumber(value);if(n===null||!max)return 0;const x=Math.max(0,Math.min(1,n/max));return invert?1-x:x;};
-   const maxOf=col=>col?Math.max(...m.rows.map(r=>analystNumber(r[col])||0),0):0;
-   const maxPo=maxOf(poValueCol),maxDelayCount=maxOf(delayedCountCol),maxDelayValue=maxOf(delayedValueCol),maxHighRisk=maxOf(highRiskValueCol),maxWeather=maxOf(weatherValueCol),maxCover=maxOf(coverCol);
-   const ranked=m.rows.map(r=>{
-    const score=(
-      norm(r[poValueCol],maxPo)*0.20+
-      norm(r[delayedCountCol],maxDelayCount)*0.15+
-      norm(r[delayedValueCol],maxDelayValue)*0.20+
-      norm(r[highRiskValueCol],maxHighRisk)*0.20+
-      norm(r[weatherValueCol],maxWeather)*0.10+
-      norm(r[coverCol],maxCover,true)*0.15
-    )*100;
-    return {r,score};
-   }).sort((a,b)=>b.score-a.score);
-   const top=ranked[0];
-   if(top){
-    const r=top.r;const facts=[];
-    if(poValueCol&&analystNumber(r[poValueCol])!==null)facts.push(`PO exposure <strong>${analystFormat(poValueCol,r[poValueCol])}</strong>`);
-    if(delayedCountCol&&analystNumber(r[delayedCountCol])!==null)facts.push(`<strong>${analystFormat(delayedCountCol,r[delayedCountCol])}</strong> delayed POs`);
-    if(delayedValueCol&&analystNumber(r[delayedValueCol])!==null)facts.push(`delayed value <strong>${analystFormat(delayedValueCol,r[delayedValueCol])}</strong>`);
-    if(highRiskValueCol&&analystNumber(r[highRiskValueCol])!==null)facts.push(`high-risk PO value <strong>${analystFormat(highRiskValueCol,r[highRiskValueCol])}</strong>`);
-    if(weatherValueCol&&analystNumber(r[weatherValueCol])!==null)facts.push(`weather-linked value <strong>${analystFormat(weatherValueCol,r[weatherValueCol])}</strong>`);
-    if(coverCol&&analystNumber(r[coverCol])!==null)facts.push(`minimum cover <strong>${analystFormat(coverCol,r[coverCol])}</strong>`);
-    const descriptors=[];
-    if(tierCol&&r[tierCol])descriptors.push(e(r[tierCol]));
-    if(criticalityCol&&r[criticalityCol])descriptors.push(`${e(r[criticalityCol])} criticality`);
-    if(countryCol&&r[countryCol])descriptors.push(e(r[countryCol]));
-    if(riskLevelCol&&r[riskLevelCol])descriptors.push(`${e(r[riskLevelCol])} operational risk`);
-    const next=ranked.slice(1,3).map(x=>`${e(x.r[supplierCol])} (${x.score.toFixed(0)})`).join(', ');
-    return `<strong>${e(r[supplierCol])}</strong> ranks highest on OntoTrail's composite supplier-risk view with a score of <strong>${top.score.toFixed(0)}/100</strong>${descriptors.length?` (${descriptors.join(' · ')})`:''}. ${facts.length?`Key drivers: ${facts.join(', ')}.`:''}${next?` The next highest suppliers are ${next}.`:''} The score is a decision-support composite derived from the returned governed metrics, not a standalone prediction.`;
-   }
-  }
- }
  if(queryPlan.type==='operational_impact'&&m.rows.length){
   const cols=m.columns.map(c=>String(c));const find=(patterns)=>cols.find(c=>{const u=c.toUpperCase();return patterns.some(p=>p.test(u));});
   const supplierCol=find([/SUPPLIER_NAME/]),materialCol=find([/MATERIAL_NAME/]),originCol=find([/ORIGIN_COUNTRY/]),plantCol=find([/PLANT_NAME/]);
