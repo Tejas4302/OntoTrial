@@ -153,7 +153,8 @@ export function resolveQuestionPlan(question='',context={}){
   const deictic=/\b(this|that|these|those|it|they|them)\b/i.test(q);
   const impact=/\b(affect|impact|implication|mean for|matter to|risk to|exposure to)\b/i.test(q);
   const workspaceRef=/\b(nova|us|our|operations?|business|supply chain|suppliers?|materials?|components?|plants?|inventory|purchase[- ]orders?|pos?|shipments?)\b/i.test(q);
-  const operationalFollowup=(impact&&workspaceRef)||(deictic&&workspaceRef);
+  const explicitExternalContext=/\b(weather|tradeprism|marketplace|transport|sea|air|land|country|origin|trade)\b/i.test(q);
+  const operationalFollowup=(deictic&&workspaceRef)||(impact&&workspaceRef&&!explicitExternalContext);
 
   if(operationalFollowup&&!hasContext){
     return {type:'needs_context',reason:'operational_followup_without_prior_turn'};
