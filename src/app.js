@@ -60,7 +60,26 @@ function exportScenario(s=scenario,name='OntoTrail scenario'){downloadFile('onto
 function analystNumber(value){const n=Number(value);return Number.isFinite(n)?n:null;}
 function analystCompactUsd(n){const a=Math.abs(n);if(a>=1e9)return '$'+new Intl.NumberFormat('en-US',{maximumFractionDigits:2}).format(n/1e9)+'B';if(a>=1e6)return '$'+new Intl.NumberFormat('en-US',{maximumFractionDigits:2}).format(n/1e6)+'M';if(a>=1e3)return '$'+new Intl.NumberFormat('en-US',{maximumFractionDigits:1}).format(n/1e3)+'K';return '$'+new Intl.NumberFormat('en-US',{maximumFractionDigits:0}).format(n);}
 function analystCompactInr(n){const a=Math.abs(n);if(a>=1e7)return '₹'+new Intl.NumberFormat('en-IN',{maximumFractionDigits:2}).format(n/1e7)+' Cr';if(a>=1e5)return '₹'+new Intl.NumberFormat('en-IN',{maximumFractionDigits:2}).format(n/1e5)+' L';if(a>=1e3)return '₹'+new Intl.NumberFormat('en-IN',{maximumFractionDigits:1}).format(n/1e3)+'K';return '₹'+new Intl.NumberFormat('en-IN',{maximumFractionDigits:0}).format(n);}
-function analystFormat(column,value){const n=analystNumber(value);if(n===null)return e(value??'—');const key=String(column).toUpperCase();if(/INR/.test(key))return analystCompactInr(n);if(/TRADE_VALUE|IMPORT_VALUE|EXPORT_VALUE|NOMINAL|REAL_TRADE|PO_VALUE.*USD|VALUE_USD/.test(key))return analystCompactUsd(n);if(/EXPOSURE|REVENUE|COST|PREMIUM|AMOUNT/.test(key))return analystCompactInr(n);if(/PCT|PERCENT|RATE/.test(key))return `${new Intl.NumberFormat('en-IN',{maximumFractionDigits:2}).format(n)}%`;if(/DAYS?/.test(key))return `${new Intl.NumberFormat('en-IN',{maximumFractionDigits:2}).format(n)} days`;if(/COUNT|QUANTITY|UNITS/.test(key))return new Intl.NumberFormat('en-IN',{maximumFractionDigits:0}).format(n);return new Intl.NumberFormat('en-IN',{maximumFractionDigits:2}).format(n);}
+function analystFormat(column,value){
+ const key=String(column).toUpperCase();
+ if(/(^|_)DATE$/.test(key)){
+  const raw=String(value??'').trim();
+  const numeric=Number(raw);
+  let dt=null;
+  if(raw&&Number.isFinite(numeric)&&numeric>10000&&numeric<100000)dt=new Date(numeric*86400000);
+  else if(raw&&/^\d{4}-\d{2}-\d{2}/.test(raw))dt=new Date(raw.slice(0,10)+'T00:00:00Z');
+  if(dt&&!Number.isNaN(dt.getTime()))return new Intl.DateTimeFormat('en-IN',{day:'2-digit',month:'short',year:'numeric',timeZone:'UTC'}).format(dt);
+  return e(value??'—');
+ }
+ const n=analystNumber(value);if(n===null)return e(value??'—');
+ if(/INR/.test(key))return analystCompactInr(n);
+ if(/TRADE_VALUE|IMPORT_VALUE|EXPORT_VALUE|NOMINAL|REAL_TRADE|PO_VALUE.*USD|VALUE_USD/.test(key))return analystCompactUsd(n);
+ if(/EXPOSURE|REVENUE|COST|PREMIUM|AMOUNT/.test(key))return analystCompactInr(n);
+ if(/PCT|PERCENT|RATE/.test(key))return `${new Intl.NumberFormat('en-IN',{maximumFractionDigits:2}).format(n)}%`;
+ if(/DAYS?/.test(key))return `${new Intl.NumberFormat('en-IN',{maximumFractionDigits:2}).format(n)} days`;
+ if(/COUNT|QUANTITY|UNITS/.test(key))return new Intl.NumberFormat('en-IN',{maximumFractionDigits:0}).format(n);
+ return new Intl.NumberFormat('en-IN',{maximumFractionDigits:2}).format(n);
+}
 function analystLabel(column){return String(column).replaceAll('_',' ').toLowerCase().replace(/\b\w/g,c=>c.toUpperCase());}
 function analystCommodityLabel(value){
  const raw=String(value||'').trim();const low=raw.toLowerCase();
@@ -305,6 +324,38 @@ function analystNarrative(question,result,cortexText='',meta={}){
    answer+='.';
    if(attention)answer+=' The purchase orders and material positions needing the most attention are '+attention+'.';
    answer+=' Priority should go first to records where low inventory cover overlaps with delayed or outstanding supply; these are the clearest continuity vulnerabilities in the returned data.';
+   return answer;
+  }
+ }
+
+ const materialInventoryPoIntent=/\b(materials?|components?|parts?)\b/i.test(q)&&/\b(inventory|cover|stock)\b/i.test(q)&&/\b(purchase orders?|\bpos?\b|prioriti[sz]e|attention)\b/i.test(q);
+ if(materialInventoryPoIntent){
+  const cols=m.columns.map(c=>String(c));const find=(patterns)=>cols.find(c=>{const u=c.toUpperCase();return patterns.some(p=>p.test(u));});
+  const materialCol=find([/MATERIAL_NAME/]),coverCol=find([/MINIMUM_DAYS_OF_COVER/,/AVERAGE_DAYS_OF_COVER/,/^DAYS_OF_COVER$/]),poCol=find([/^PO_ID$/]),statusCol=find([/PO_STATUS/]),poValueCol=find([/TOTAL_PO_VALUE_USD/,/^PO_VALUE_USD$/,/PO_VALUE/]),outstandingCol=find([/OUTSTANDING_QUANTITY/]),delayedValueCol=find([/DELAYED_PO_VALUE_USD/]),criticalityCol=find([/MATERIAL_CRITICALITY/]),plantCol=find([/PLANT_NAME/]),promisedCol=find([/PROMISED_DATE/]);
+  if(materialCol&&coverCol&&m.rows.length){
+   const grouped=new Map();
+   for(const r of m.rows){
+    const name=String(r[materialCol]||'').trim();if(!name)continue;
+    const cover=analystNumber(r[coverCol]);
+    const g=grouped.get(name)||{name,minCover:null,criticality:'',plants:new Set(),rows:[]};
+    if(cover!==null&&(g.minCover===null||cover<g.minCover))g.minCover=cover;
+    if(criticalityCol&&r[criticalityCol])g.criticality=String(r[criticalityCol]);
+    if(plantCol&&r[plantCol])g.plants.add(String(r[plantCol]));
+    g.rows.push(r);grouped.set(name,g);
+   }
+   const materials=[...grouped.values()].sort((a,b)=>(a.minCover??1e9)-(b.minCover??1e9));
+   const materialText=materials.slice(0,3).map(g=>{const bits=[];if(g.minCover!==null)bits.push(analystFormat(coverCol,g.minCover));if(g.criticality)bits.push(e(g.criticality)+' criticality');if(g.plants.size)bits.push([...g.plants].map(e).join(' / '));return '<strong>'+e(g.name)+'</strong>'+(bits.length?' ('+bits.join(' · ')+')':'');}).join(', ');
+   const priority=[...m.rows].sort((a,b)=>{
+    const statusScore=x=>/DELAYED/i.test(String(x||''))?4:/PARTIALLY_RECEIVED/i.test(String(x||''))?3:/IN_TRANSIT/i.test(String(x||''))?2:/OPEN/i.test(String(x||''))?1:0;
+    const sd=statusScore(b[statusCol])-statusScore(a[statusCol]);if(sd)return sd;
+    const dd=(analystNumber(b[delayedValueCol])||0)-(analystNumber(a[delayedValueCol])||0);if(dd)return dd;
+    const od=(analystNumber(b[outstandingCol])||0)-(analystNumber(a[outstandingCol])||0);if(od)return od;
+    return (analystNumber(a[coverCol])??1e9)-(analystNumber(b[coverCol])??1e9);
+   }).slice(0,5);
+   const poText=poCol?priority.map(r=>{const bits=[];if(materialCol&&r[materialCol])bits.push(e(r[materialCol]));if(statusCol&&r[statusCol])bits.push(e(r[statusCol]));if(poValueCol&&analystNumber(r[poValueCol])!==null)bits.push(analystFormat(poValueCol,r[poValueCol]));if(outstandingCol&&analystNumber(r[outstandingCol])>0)bits.push(analystFormat(outstandingCol,r[outstandingCol])+' units outstanding');if(delayedValueCol&&analystNumber(r[delayedValueCol])>0)bits.push(analystFormat(delayedValueCol,r[delayedValueCol])+' delayed');if(promisedCol&&r[promisedCol])bits.push('promised '+analystFormat(promisedCol,r[promisedCol]));return '<strong>'+e(r[poCol])+'</strong>'+(bits.length?' ('+bits.join(' · ')+')':'');}).join(', '):'';
+   let answer='The lowest inventory cover is concentrated in '+materialText+'.';
+   if(poText)answer+=' The purchase orders to prioritize are '+poText+'.';
+   answer+=' Priority is based on delayed or partially received status first, then delayed value, outstanding quantity and low cover.';
    return answer;
   }
  }
