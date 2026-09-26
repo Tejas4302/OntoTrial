@@ -104,8 +104,7 @@ function analystModel(result){
 }
 function analystNarrative(question,result,cortexText='',meta={}){
  const raw=String(cortexText||'').trim();
- if(raw)return e(raw).replace(/\n/g,'<br>');
- return '<span class="muted-inline">Snowflake Cortex Analyst returned governed data without a narrative response. Review the evidence table and audit trail below.</span>';
+ return raw?e(raw).replace(/\n/g,'<br>'):'';
 }
 
 function splitCompoundQuestion(question){
