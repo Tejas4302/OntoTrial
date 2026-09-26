@@ -84,9 +84,11 @@ function analystModel(result){
  const dimension=dimensions.find(c=>!/SCENARIO/.test(String(c).toUpperCase()))||dimensions[0];return {columns,rows,numeric,dimensions,metric,dimension};
 }
 function analystNarrative(question,result,cortexText='',meta={}){
- if(meta?.aiOrchestrated&&cortexText)return e(cortexText).replace(/\n/g,'<br>');
- if(meta?.needsContext)return e(cortexText||'I need the prior finding you want me to connect to our operations. Ask this as a follow-up in the same chat.');
- const m=analystModel(result);if(!m.rows.length)return cortexText?e(cortexText):'No matching records were returned for this question.';
+ const rawCortex=String(cortexText||'').trim();
+ const interpretationOnly=/this is our interpretation of your question|provide a comprehensive|covering:\s*\(|overall po summary|individual po detail|semantic request|query plan|requested fields|include supplier|show top/i.test(rawCortex);
+ if(meta?.aiOrchestrated&&rawCortex&&!interpretationOnly)return e(rawCortex).replace(/\n/g,'<br>');
+ if(meta?.needsContext)return e(rawCortex||'I need the prior finding you want me to connect to our operations. Ask this as a follow-up in the same chat.');
+ const m=analystModel(result);if(!m.rows.length)return rawCortex&&!interpretationOnly?e(rawCortex):'No matching governed records were returned for this question.';
  const q=String(question||'');const asksLowest=/\b(lowest|minimum|min\.?|smallest|least|bottom)\b/i.test(q);const asksHighest=/\b(highest|maximum|max\.?|largest|most|top)\b/i.test(q);
  const rowIntent=/\b(rest of world|\brow\b)\b/i.test(q);
  const governanceImportIntent=/\bindia\b/i.test(q)&&/\b2026\b/.test(q)&&(/\btotal import value\b/i.test(q)||/\btotal import exposure\b/i.test(q)||/\btotal inbound trade value\b/i.test(q));
@@ -301,7 +303,7 @@ function analystNarrative(question,result,cortexText='',meta={}){
   const shipmentCol=find([/SHIPMENT_ID/]),statusCol=find([/SHIPMENT_STATUS/]),etaCol=find([/ETA_DATE/]),supplierCol=find([/SUPPLIER_NAME/]),materialCol=find([/MATERIAL_NAME/]),outstandingCol=find([/OUTSTANDING_QUANTITY/]);
   if(shipmentCol&&m.rows.length){const delayed=m.rows.filter(r=>/DELAYED/i.test(String(r[statusCol]||'')));const focus=delayed.length?delayed:m.rows;const leaders=focus.slice(0,5).map(r=>{const bits=[];if(statusCol&&r[statusCol])bits.push(e(r[statusCol]));if(etaCol&&r[etaCol])bits.push(`ETA ${e(r[etaCol])}`);if(outstandingCol&&analystNumber(r[outstandingCol])!==null)bits.push(`${analystFormat(outstandingCol,r[outstandingCol])} outstanding`);if(supplierCol&&r[supplierCol])bits.push(e(r[supplierCol]));if(materialCol&&r[materialCol])bits.push(e(r[materialCol]));return `<strong>${e(r[shipmentCol])}</strong> (${bits.join(' · ')})`;}).join(', ');return `${delayed.length?`${delayed.length} delayed shipment${delayed.length===1?'':'s'} are visible in the returned evidence. `:''}${leaders?`Priority shipments: ${leaders}.`:''} Use the shipment status and ETA as the operational source of truth; external market dependency is context only.`;}
  }
- const supplierRiskIntent=/\b(suppliers?|vendors?)\b/i.test(q)&&/\b(worry|risk|highest|most|rank|priority|exposure)\b/i.test(q);
+ const supplierRiskIntent=(/\b(suppliers?|vendors?)\b/i.test(q)||/\b[A-Z][A-Za-z&.' -]{2,}\b/.test(q))&&/\b(worry|risk|risky|highest|most|rank|priority|exposure|attention|why)\b/i.test(q)&&/\b(supplier|vendor|mobility|purchase order|\bpo\b|inventory|material|supply[- ]chain)\b/i.test(q);
  if(supplierRiskIntent){
   const cols=m.columns.map(c=>String(c));const find=(patterns)=>cols.find(c=>{const u=c.toUpperCase();return patterns.some(p=>p.test(u));});
   const supplierCol=find([/SUPPLIER_NAME/,/^SUPPLIER$/,/VENDOR_NAME/]);
