@@ -1289,3 +1289,19 @@ body.entry-mode .platform-admin{
     margin-top:11px;
   }
 }
+
+
+/* v3.0.1 — denser Analyst chat rhythm */
+body.analyst-mode .analyst-page-log{padding:14px 22px 20px}
+body.analyst-mode .analyst-page .chat-pair{margin:0 auto 16px}
+body.analyst-mode .user-question-wrap{margin-bottom:8px}
+body.analyst-mode .user-question{padding:10px 14px;margin-bottom:4px}
+body.analyst-mode .assistant-answer{padding:2px 0 4px}
+body.analyst-mode .assistant-answer .answer-heading{margin-bottom:7px}
+body.analyst-mode .assistant-answer>.direct-answer{margin:7px 0 9px;line-height:1.55}
+body.analyst-mode .assistant-response-actions{margin-top:6px;padding-top:2px}
+body.analyst-mode .analyst-reveal{margin-top:4px}
+body.analyst-mode .analyst-table-wrap,
+body.analyst-mode .analyst-viz,
+body.analyst-mode .analyst-sql,
+body.analyst-mode .analyst-suggestions{margin-top:8px;margin-bottom:10px}
