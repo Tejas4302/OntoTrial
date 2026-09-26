@@ -102,14 +102,205 @@ function analystModel(result){
  const metric=numeric.find(c=>/EXPOSURE|IMPORT_VALUE|EXPORT_VALUE|TRADE_VALUE|PO_VALUE|REVENUE|COST|AMOUNT/.test(String(c).toUpperCase()))||numeric.find(c=>/PCT|PERCENT|RATE|DAYS/.test(String(c).toUpperCase()))||numeric.find(c=>/COUNT|QUANTITY|UNITS/.test(String(c).toUpperCase()))||numeric[0];
  const dimension=dimensions.find(c=>!/SCENARIO/.test(String(c).toUpperCase()))||dimensions[0];return {columns,rows,numeric,dimensions,metric,dimension};
 }
+function composeNovaGovernedAnswer(question,m,meta={}){
+ const domain=String(meta?.semanticDomain||'');
+ const cols=m.columns.map(c=>String(c));
+ const hasNovaColumns=cols.some(c=>/SUPPLIER_|MATERIAL_|PO_|SHIPMENT_|PLANT_|INVENTORY_|OPERATIONAL_RISK/i.test(c));
+ if(domain!=='nova-operations'&&!hasNovaColumns)return '';
+ if(meta?.queryPlan?.type==='operational_impact')return '';
+
+ const q=String(question||'');
+ const intents=new Set((meta?.intents||[]).map(String));
+ const find=(patterns)=>cols.find(c=>{const u=c.toUpperCase();return patterns.some(p=>p.test(u));});
+ const supplierCol=find([/SUPPLIER_NAME/,/^SUPPLIER$/,/VENDOR_NAME/]);
+ const materialCol=find([/MATERIAL_NAME/,/COMPONENT_NAME/,/PART_NAME/]);
+ const poCol=find([/^PO_ID$/]);
+ const poStatusCol=find([/PO_STATUS/]);
+ const promisedCol=find([/PROMISED_DATE/]);
+ const shipmentCol=find([/SHIPMENT_ID/]);
+ const shipmentStatusCol=find([/SHIPMENT_STATUS/]);
+ const etaCol=find([/ETA_DATE/]);
+ const plantCol=find([/PLANT_NAME/]);
+ const criticalityCol=find([/MATERIAL_CRITICALITY/]);
+ const supplierCriticalityCol=find([/SUPPLIER_CRITICALITY/]);
+ const coverCol=find([/MINIMUM_DAYS_OF_COVER/,/AVERAGE_DAYS_OF_COVER/,/^DAYS_OF_COVER$/]);
+ const poValueCol=find([/TOTAL_PO_VALUE_USD/,/^PO_VALUE_USD$/, /PO_VALUE/]);
+ const delayedValueCol=find([/DELAYED_PO_VALUE_USD/]);
+ const delayedCountCol=find([/DELAYED_PO_COUNT/]);
+ const outstandingCol=find([/OUTSTANDING_QUANTITY/]);
+ const highRiskCol=find([/HIGH_OPERATIONAL_RISK_PO_VALUE_USD/]);
+ const riskLevelCol=find([/OPERATIONAL_RISK_LEVEL/]);
+ const weatherValueCol=find([/WEATHER_LINKED_PO_VALUE_USD/]);
+ const weatherLevelCol=find([/WEATHER_RISK_LEVEL/]);
+ const seaCol=find([/AVERAGE_MARKET_SEA_DEPENDENCY_PCT/]);
+
+ const wantsSupplier=intents.has('supplier_risk')||/\b(supplier|vendor)\b/i.test(q);
+ const wantsMaterial=intents.has('material_risk')||/\b(material|component|part)s?\b/i.test(q);
+ const wantsPo=intents.has('purchase_orders')||/\b(purchase orders?|\bpos?\b)\b/i.test(q);
+ const wantsInventory=intents.has('inventory_health')||/\b(inventory|stock|cover|safety stock)\b/i.test(q);
+ const wantsShipment=intents.has('shipment_logistics')||/\b(shipment|eta|in transit|logistics)\b/i.test(q);
+ const wantsPlant=intents.has('plant_risk')||/\bplant|factory\b/i.test(q);
+ const wantsExternal=intents.has('nova_weather_risk')||intents.has('cross_domain')||/\bweather|external|marketplace|sea dependency\b/i.test(q);
+ const wantsRisk=/\b(risk|risky|worry|priority|prioriti[sz]e|attention|exposure|disruption)\b/i.test(q)||[...intents].some(x=>/risk/.test(x));
+
+ const rows=m.rows;
+ const num=(r,c)=>c?analystNumber(r[c]):null;
+ const uniqueValues=c=>c?[...new Set(rows.map(r=>String(r[c]??'').trim()).filter(Boolean))]:[];
+ const sum=c=>c?rows.reduce((n,r)=>n+(num(r,c)||0),0):null;
+ const min=c=>{if(!c)return null;const values=rows.map(r=>num(r,c)).filter(v=>v!==null);return values.length?Math.min(...values):null;};
+
+ const statusRank=v=>/DELAYED/i.test(String(v||''))?5:/PARTIALLY_RECEIVED/i.test(String(v||''))?4:/IN_TRANSIT/i.test(String(v||''))?3:/OPEN/i.test(String(v||''))?2:/BOOKED/i.test(String(v||''))?1:0;
+ const priorityScore=r=>{
+   const cover=num(r,coverCol);
+   return statusRank(poStatusCol&&r[poStatusCol])*1e9+
+     (num(r,highRiskCol)||0)*10+
+     (num(r,delayedValueCol)||0)*5+
+     (num(r,weatherValueCol)||0)*2+
+     (num(r,outstandingCol)||0)*1000+
+     (cover!==null?Math.max(0,30-cover)*10000:0)+
+     (num(r,poValueCol)||0);
+ };
+ const priorityRows=[...rows].sort((a,b)=>priorityScore(b)-priorityScore(a));
+
+ const suppliers=uniqueValues(supplierCol);
+ const materials=uniqueValues(materialCol);
+ const plants=uniqueValues(plantCol);
+ const riskLevels=uniqueValues(riskLevelCol);
+ const weatherLevels=uniqueValues(weatherLevelCol);
+ const totalPo=sum(poValueCol),delayed=sum(delayedValueCol),delayedCount=sum(delayedCountCol),outstanding=sum(outstandingCol),highRisk=sum(highRiskCol),weatherLinked=sum(weatherValueCol),minimumCover=min(coverCol);
+
+ const evidence=[];
+ if(totalPo!==null&&totalPo>0)evidence.push(analystFormat(poValueCol,totalPo)+' total PO exposure');
+ if(delayed!==null&&delayed>0)evidence.push(analystFormat(delayedValueCol,delayed)+' delayed exposure');
+ else if(delayedCount!==null&&delayedCount>0)evidence.push(analystFormat(delayedCountCol,delayedCount)+' delayed POs');
+ if(outstanding!==null&&outstanding>0)evidence.push(analystFormat(outstandingCol,outstanding)+' units outstanding');
+ if(minimumCover!==null)evidence.push('minimum cover of '+analystFormat(coverCol,minimumCover));
+ if(highRisk!==null&&highRisk>0)evidence.push(analystFormat(highRiskCol,highRisk)+' high-risk PO exposure');
+ if(weatherLinked!==null&&weatherLinked>0)evidence.push(analystFormat(weatherValueCol,weatherLinked)+' weather-linked exposure');
+
+ let headline='';
+ if(suppliers.length===1&&(wantsSupplier||wantsRisk)){
+   headline='<strong>'+e(suppliers[0])+'</strong> is the main focus in this result';
+   if(evidence.length)headline+=' because the governed evidence shows '+evidence.slice(0,5).join(', ');
+   if(riskLevels.length)headline+=', with operational risk classified as '+riskLevels.map(e).join(' / ');
+   headline+='.';
+ }else if(wantsMaterial&&materials.length){
+   headline='The material position requiring the closest attention is <strong>'+e(materials[0])+'</strong>';
+   if(minimumCover!==null)headline+=' with '+analystFormat(coverCol,minimumCover)+' minimum inventory cover';
+   headline+='.';
+ }else if(wantsPlant&&plants.length){
+   headline='The returned operational exposure is concentrated in <strong>'+plants.slice(0,2).map(e).join('</strong> and <strong>')+'</strong>.';
+ }else if(evidence.length){
+   headline='The governed Nova result shows '+evidence.slice(0,5).join(', ')+'.';
+ }
+
+ const sections=[];
+
+ if(wantsMaterial&&materialCol){
+   const grouped=new Map();
+   for(const r of rows){
+     const name=String(r[materialCol]||'').trim();if(!name)continue;
+     const g=grouped.get(name)||{name,rows:[],minCover:null,criticality:'',plants:new Set()};
+     const c=num(r,coverCol);if(c!==null&&(g.minCover===null||c<g.minCover))g.minCover=c;
+     if(criticalityCol&&r[criticalityCol])g.criticality=String(r[criticalityCol]);
+     if(plantCol&&r[plantCol])g.plants.add(String(r[plantCol]));
+     g.rows.push(r);grouped.set(name,g);
+   }
+   const groupedRows=[...grouped.values()].sort((a,b)=>{
+     const ac=a.minCover??1e9,bc=b.minCover??1e9;if(ac!==bc)return ac-bc;
+     const ap=a.rows.reduce((n,r)=>n+(num(r,delayedValueCol)||0)+(num(r,outstandingCol)||0)*1000,0);
+     const bp=b.rows.reduce((n,r)=>n+(num(r,delayedValueCol)||0)+(num(r,outstandingCol)||0)*1000,0);
+     return bp-ap;
+   }).slice(0,3);
+   if(groupedRows.length){
+     const text=groupedRows.map(g=>{
+       const bits=[];
+       if(g.minCover!==null)bits.push(analystFormat(coverCol,g.minCover)+' cover');
+       if(g.criticality)bits.push(e(g.criticality)+' criticality');
+       if(g.plants.size)bits.push([...g.plants].map(e).join(' / '));
+       return '<strong>'+e(g.name)+'</strong>'+(bits.length?' ('+bits.join(' · ')+')':'');
+     }).join(', ');
+     sections.push('<strong>Materials:</strong> '+text+'.');
+   }
+ }
+
+ if(wantsPo&&poCol){
+   const list=priorityRows.filter(r=>r[poCol]).slice(0,5).map(r=>{
+     const bits=[];
+     if(materialCol&&r[materialCol])bits.push(e(r[materialCol]));
+     if(poStatusCol&&r[poStatusCol])bits.push(e(r[poStatusCol]));
+     if(poValueCol&&num(r,poValueCol)!==null)bits.push(analystFormat(poValueCol,r[poValueCol]));
+     if(delayedValueCol&&num(r,delayedValueCol)>0)bits.push(analystFormat(delayedValueCol,r[delayedValueCol])+' delayed');
+     if(outstandingCol&&num(r,outstandingCol)>0)bits.push(analystFormat(outstandingCol,r[outstandingCol])+' units outstanding');
+     if(coverCol&&num(r,coverCol)!==null)bits.push(analystFormat(coverCol,r[coverCol])+' cover');
+     if(promisedCol&&r[promisedCol])bits.push('promised '+analystFormat(promisedCol,r[promisedCol]));
+     return '<strong>'+e(r[poCol])+'</strong>'+(bits.length?' ('+bits.join(' · ')+')':'');
+   }).join(', ');
+   if(list)sections.push('<strong>Purchase orders:</strong> '+list+'.');
+ }
+
+ if(wantsInventory&&coverCol&&!wantsMaterial){
+   const low=[...rows].filter(r=>num(r,coverCol)!==null).sort((a,b)=>num(a,coverCol)-num(b,coverCol)).slice(0,3).map(r=>{
+     const label=materialCol&&r[materialCol]?e(r[materialCol]):supplierCol&&r[supplierCol]?e(r[supplierCol]):'Exposure';
+     return '<strong>'+label+'</strong> ('+analystFormat(coverCol,r[coverCol])+' cover)';
+   }).join(', ');
+   if(low)sections.push('<strong>Inventory:</strong> lowest cover is '+low+'.');
+ }
+
+ if(wantsShipment&&shipmentCol){
+   const list=[...rows].filter(r=>r[shipmentCol]).sort((a,b)=>statusRank(b[shipmentStatusCol])-statusRank(a[shipmentStatusCol])).slice(0,4).map(r=>{
+     const bits=[];
+     if(shipmentStatusCol&&r[shipmentStatusCol])bits.push(e(r[shipmentStatusCol]));
+     if(etaCol&&r[etaCol])bits.push('ETA '+analystFormat(etaCol,r[etaCol]));
+     if(materialCol&&r[materialCol])bits.push(e(r[materialCol]));
+     if(outstandingCol&&num(r,outstandingCol)>0)bits.push(analystFormat(outstandingCol,r[outstandingCol])+' units outstanding');
+     return '<strong>'+e(r[shipmentCol])+'</strong>'+(bits.length?' ('+bits.join(' · ')+')':'');
+   }).join(', ');
+   if(list)sections.push('<strong>Shipments:</strong> '+list+'.');
+ }
+
+ if(wantsExternal){
+   const external=[];
+   if(weatherLevels.length)external.push('weather signal '+weatherLevels.map(e).join(' / '));
+   if(weatherLinked!==null&&weatherLinked>0)external.push(analystFormat(weatherValueCol,weatherLinked)+' weather-linked PO exposure');
+   if(seaCol){
+     const vals=rows.map(r=>num(r,seaCol)).filter(v=>v!==null);
+     if(vals.length)external.push(new Intl.NumberFormat('en-IN',{maximumFractionDigits:1}).format(Math.max(...vals))+'% external sea dependency');
+   }
+   if(external.length)sections.push('<strong>External context:</strong> '+external.join(', ')+'.');
+ }
+
+ let implication='';
+ if(wantsRisk||wantsPo||wantsInventory||wantsMaterial){
+   const hasDelay=(delayed||0)>0||rows.some(r=>/DELAYED/i.test(String(r[poStatusCol]||'')));
+   const hasOutstanding=(outstanding||0)>0;
+   const lowCover=minimumCover!==null&&minimumCover<10;
+   if(hasDelay||hasOutstanding||lowCover){
+     implication='Priority should go to records where '+[
+       hasDelay?'delayed supply':null,
+       hasOutstanding?'outstanding quantity':null,
+       lowCover?'low inventory cover':null
+     ].filter(Boolean).join(', ')+' overlap. These are the clearest continuity vulnerabilities in the returned data.';
+   }else{
+     implication='The returned data shows exposure to monitor, but it does not indicate a confirmed disruption. Use status, inventory cover and shipment evidence to decide whether intervention is required.';
+   }
+ }
+
+ const answer=[headline,...sections,implication].filter(Boolean).join('<br><br>');
+ return answer;
+}
+
 function analystNarrative(question,result,cortexText='',meta={}){
  const rawCortex=String(cortexText||'').trim();
  const interpretationOnly=/this is our interpretation of your question|provide a comprehensive|covering:\s*\(|overall po summary|individual po detail|semantic request|query plan|requested fields|include supplier|show top/i.test(rawCortex);
- if(meta?.aiOrchestrated&&rawCortex&&!interpretationOnly)return e(rawCortex).replace(/\n/g,'<br>');
  if(meta?.needsContext)return e(rawCortex||'I need the prior finding you want me to connect to our operations. Ask this as a follow-up in the same chat.');
  const m=analystModel(result);if(!m.rows.length)return rawCortex&&!interpretationOnly?e(rawCortex):'No matching governed records were returned for this question.';
  const q=String(question||'');const asksLowest=/\b(lowest|minimum|min\.?|smallest|least|bottom)\b/i.test(q);const asksHighest=/\b(highest|maximum|max\.?|largest|most|top)\b/i.test(q);
  const rowIntent=/\b(rest of world|\brow\b)\b/i.test(q);
+ const queryPlan=meta?.queryPlan||{};
+ const novaNarrative=composeNovaGovernedAnswer(question,m,meta);
+ if(novaNarrative)return novaNarrative;
+ if(meta?.aiOrchestrated&&rawCortex&&!interpretationOnly)return e(rawCortex).replace(/\n/g,'<br>');
  const governanceImportIntent=/\bindia\b/i.test(q)&&/\b2026\b/.test(q)&&(/\btotal import value\b/i.test(q)||/\btotal import exposure\b/i.test(q)||/\btotal inbound trade value\b/i.test(q));
  if(governanceImportIntent){
   const cols=m.columns.map(c=>String(c));const find=(patterns)=>cols.find(c=>{const u=c.toUpperCase();return patterns.some(p=>p.test(u));});
@@ -117,7 +308,6 @@ function analystNarrative(question,result,cortexText='',meta={}){
   const value=importCol?m.rows.map(r=>analystNumber(r[importCol])).filter(v=>v!==null).reduce((a,b)=>a+b,0):null;
   if(value!==null)return `India's governed 2026 import value is <strong>${analystFormat(importCol||'IMPORT_VALUE_USD',value)}</strong>. Planning, Procurement and Logistics phrasing all resolve to the canonical <strong>import_value_usd</strong> metric with <strong>TRADE_DIRECTION = IMPORT</strong> and <strong>TRADE_YEAR = 2026</strong>.`;
  }
- const queryPlan=meta?.queryPlan||{};
  if(queryPlan.type==='transport_dependency_ranking'){
   const cols=m.columns.map(c=>String(c));const find=(patterns)=>cols.find(c=>{const u=c.toUpperCase();return patterns.some(p=>p.test(u));});
   const metricCol=find([new RegExp(queryPlan.metric||'DEPENDENCY_PCT','i')]);
