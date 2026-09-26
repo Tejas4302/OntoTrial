@@ -110,31 +110,7 @@ function analystNarrative(question,result,cortexText='',meta={}){
 
 function splitCompoundQuestion(question){
  const q=String(question||'').trim();
- const patterns=[/[,;]?\s+(?:and\s+)?what (?:action|actions|should we do|should we take|do you recommend).*$/i,/[,;]?\s+(?:and\s+)?(?:recommend|suggest) (?:an )?(?:action|actions|next steps?).*$/i,/[,;]?\s+(?:and\s+)?how (?:can|should) we (?:reduce|mitigate|address|respond to).*$/i];
- for(const re of patterns){const m=q.match(re);if(m&&m.index>12)return {analysisQuestion:q.slice(0,m.index).trim().replace(/[?,;]+$/,'?'),wantsRecommendation:true};}
- return {analysisQuestion:q,wantsRecommendation:/\b(action|recommend|suggest|mitigat|reduce risk|next step)\b/i.test(q)};
-}
-function recommendationFor(question,result){
- const m=analystModel(result);if(!m.rows.length)return null;
- if(/high[- ]risk|high operational risk/i.test(String(question||''))&&m.metric&&/HIGH_OPERATIONAL_RISK_PO_VALUE_USD/i.test(String(m.metric))&&m.rows.every(r=>(analystNumber(r[m.metric])||0)===0))return null;
- const dim=String(m.dimension||'').toUpperCase();const metric=m.metric;const sorted=metric?[...m.rows].filter(r=>analystNumber(r[metric])!==null).sort((a,b)=>analystNumber(b[metric])-analystNumber(a[metric])):m.rows;const top=sorted[0]||{};const name=String(top[m.dimension]||'the highest-risk item');const value=metric?analystFormat(metric,top[metric]):'';
- let title=`Review and mitigate ${name} exposure`,action=`Review the highest-impact records for ${name}, assign an owner and validate the mitigation in the recovery scenario before execution.`,owner='Supply Planning';
- const geoMatch=String(question||'').match(/\b(?:to|from|with)\s+([A-Z][A-Za-z .'-]{2,40})\b/);
- if(/\b(import|export|trade)\b/i.test(question)&&/\b(exposure|dependenc|concentrat|risk)\b/i.test(question)){
-  const geography=geoMatch?.[1]?.replace(/\s+in\s+\d{4}.*$/i,'').trim()||name;
-  title=`Review ${geography} trade concentration and dependency`;
-  action=`Prioritize the largest commodity exposures linked to ${geography}, validate sea/air/land dependency, and review alternate sourcing or routing options where concentration and weather risk overlap.`;
-  owner='Trade Risk Lead';
- }
- if(/SUPPLIER|VENDOR/.test(dim)){title=`Qualify alternate source for ${name}`;action=`Qualify an alternate source for the exposed components supplied by ${name}, prioritize the highest-value affected orders and simulate a partial demand shift before approval.`;owner='Procurement Lead';}
- else if(/PLANT|FACTORY|LOCATION/.test(dim)){title=`Rebalance exposure at ${name}`;action=`Review alternate production capacity and inbound supply options for ${name}, then model the lowest-risk production reallocation in the recovery scenario.`;owner='Operations Lead';}
- else if(/PRODUCT|PART|COMPONENT/.test(dim)){title=`Mitigate ${name} component risk`;action=`Prioritize replenishment and alternate sourcing for ${name}, protect the highest-value customer orders and validate recovery capacity.`;owner='Supply Planning';}
- else if(/CUSTOMER|CLIENT|BUYER/.test(dim)){title=`Protect commitments for ${name}`;action=`Prioritize the exposed orders for ${name}, confirm revised supply dates and align procurement and logistics actions to protect the highest-value commitments.`;owner='Customer Operations';}
- else if(/ORIGIN_COUNTRY|ORIGIN_ISO|COUNTRY/.test(dim)){title=`Assess trade exposure to ${name}`;action=`Review the highest-value India trade flows linked to ${name}, identify concentrated commodity and transport dependencies, and prepare mitigation where weather or concentration risk is elevated.`;owner='Trade Risk Lead';}
- else if(/CHAPTER|HEADING|HS4|COMMODITY/.test(dim)){title=`Diversify ${name} exposure`;action=`Review the largest country and transport dependencies for ${name}, identify alternative sourcing corridors and prioritize high-value flows with elevated external risk.`;owner='Category Strategy';}
- else if(/WEATHER/.test(dim)){title=`Mitigate weather-linked trade risk`;action=`Prioritize trade flows with elevated weather risk, validate the exposed countries and commodities, and assign contingency actions for the highest-value dependencies.`;owner='Logistics Risk Lead';}
- else if(/ORDER/.test(dim)){title=`Recover ${name}`;action=`Trace the shortage path for ${name}, confirm the fastest feasible recovery source and assign execution ownership for the due-date risk.`;owner='Supply Planning';}
- return {title,action,owner,summary:`${name}${value?` is the leading exposure at ${value}`:''}.`,expectedImpact:'Reduce modeled exposure and protect customer commitments'};
+ return {analysisQuestion:q};
 }
 function analystFilters(result,id){const m=analystModel(result);const dims=m.dimensions.filter(c=>new Set(m.rows.map(r=>String(r[c]??''))).size>1).slice(0,3);if(!dims.length)return '';return `<div class="analyst-filters" data-result-id="${id}">${dims.map(c=>{const vals=[...new Set(m.rows.map(r=>String(r[c]??'')).filter(Boolean))].sort();return `<label>${e(analystLabel(c))}<select data-analyst-filter="${e(c)}"><option value="">All</option>${vals.map(v=>`<option>${e(v)}</option>`).join('')}</select></label>`}).join('')}</div>`;}
 function analystTable(result,id){const m=analystModel(result);if(!m.rows.length)return '';return `<div class="analyst-table-wrap"><table class="analyst-table" data-analyst-table="${id}"><thead><tr>${m.columns.map(c=>`<th>${e(analystLabel(c))}</th>`).join('')}</tr></thead><tbody>${m.rows.slice(0,50).map(r=>`<tr>${m.columns.map(c=>`<td data-col="${e(c)}" data-raw="${e(r[c]??'')}">${analystFormat(c,r[c])}</td>`).join('')}</tr>`).join('')}</tbody></table></div>`;}
@@ -490,7 +466,7 @@ function analystFollowupContext(block){
 }
 async function ask(q){
  const question=q.trim();if(!question)return;if(view!=='analyst')navigate('analyst');const chat=analystUI();const requestThread=activeAnalystThread();if(!chatCount){chat.log?.replaceChildren();if(requestThread&&requestThread.title==='New chat'){requestThread.title=question.length>52?`${question.slice(0,49)}…`:question;saveAnalystWorkspace();}}
- const {analysisQuestion,wantsRecommendation}=splitCompoundQuestion(question);
+ const {analysisQuestion}=splitCompoundQuestion(question);
  const block=document.createElement('article');block.className='chat-pair';block.innerHTML=`<div class="user-question-wrap">${userQuestionInner(question)}</div><div class="assistant-answer">${analystProgressMarkup()}</div>`;chat.log?.append(block);chatCount++;persistAnalystThreadFromLog(requestThread,chat.log);if(chat.input){chat.input.value='';chat.input.disabled=true;}const askButton=chat.form?.querySelector('button[type="submit"]');if(askButton)askButton.disabled=true;if(chat.log)chat.log.scrollTop=chat.log.scrollHeight;
  try{
   const answerEl=block.querySelector('.assistant-answer');
