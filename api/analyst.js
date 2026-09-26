@@ -453,7 +453,7 @@ async function contextualAnalystOrchestration({base,pat,warehouse,question,previ
       metrics:DATASET_DOMAINS[chosen.domain].metrics.length
     },
     warehouse,
-    text:chosenText||'I found governed evidence relevant to this follow-up.',
+    text:chosenText||'',
     sql:chosen.sql,
     suggestions:(chosen.parsed&&chosen.parsed.suggestions)||[],
     result:chosen.result,
@@ -742,25 +742,7 @@ export default async function handler(req,res){
           fallback.executionWarning='';
           return send(res,200,fallback);
         }catch(fallbackErr){
-          return send(res,200,{
-            source:'snowflake-cortex-analyst-orchestration-error',
-            requestId:'analyst-followup-orchestration-error',
-            semanticView:previousSemanticView||'',
-            semanticDomain:previousSemanticDomain||'conversation',
-            intents:['contextual_ai_orchestration_error'],
-            datasetCoverage:{dimensions:0,metrics:0},
-            warehouse,
-            text:'I could not resolve this follow-up against either governed semantic view without risking an incorrect answer. Please retry or make the business entity you want to analyze explicit.',
-            sql:'',
-            suggestions:[],
-            result:null,
-            queryPlan:aiPlan||null,
-            orchestrationPlan:{engine:'cortex_analyst'},
-            aiOrchestrated:true,
-            fallbackUsed:false,
-            followupContextUsed:true,
-            executionWarning:fallbackErr&&fallbackErr.message?fallbackErr.message:aiPlannerWarning
-          });
+          return send(res,502,{error:fallbackErr&&fallbackErr.message?fallbackErr.message:aiPlannerWarning});
         }
       }
     }
@@ -774,31 +756,6 @@ export default async function handler(req,res){
     previousColumns,
     hasRows:previousRows.length>0
   });
-
-  if(plan.type==='needs_context'){
-    return send(res,200,{
-      source:'ontotrail-conversation-router',
-      requestId:'needs-context',
-      semanticView:'',
-      semanticDomain:'conversation',
-      intents:['needs_context'],
-      datasetCoverage:{dimensions:0,metrics:0},
-      warehouse,
-      text:'I need the prior finding you want me to connect to Nova Mobility operations. Ask this as a follow-up in the same chat after a trade, transport, weather, supplier or material question.',
-      sql:'',
-      suggestions:[
-        'Which India imports are most dependent on sea transport in 2026?',
-        'Which origins have the highest elevated weather-risk trade exposure?',
-        'Which Nova suppliers have the highest operational risk?'
-      ],
-      result:null,
-      queryPlan:plan,
-      needsContext:true,
-      fallbackUsed:false,
-      followupContextUsed:false,
-      executionWarning:''
-    });
-  }
 
   const followupSignal=/\b(this|that|these|those|it|they|them|affect|impact|follow[- ]?up|what about|how about|operations?|suppliers?|materials?|plants?|purchase orders?|shipments?)\b/i.test(question);
   const classificationQuestion=hasFollowupContext&&followupSignal
