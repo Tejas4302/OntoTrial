@@ -263,19 +263,32 @@ async function aiSynthesize(base,pat,warehouse,model,input){
 
 
 async function runSemanticAnalyst(base,pat,semanticView,prompt){
-  const response=await fetchWithTimeout(base+'/api/v2/cortex/analyst/message',{
-    method:'POST',
-    headers:snowHeaders(pat),
-    body:JSON.stringify({
-      messages:[{role:'user',content:[{type:'text',text:prompt}]}],
-      semantic_view:semanticView,
-      stream:false
-    })
-  },25000);
-  const body=await response.json().catch(()=>({}));
-  if(!response.ok)throw Error(body.message||body.error||('Snowflake Cortex Analyst returned '+response.status+'.'));
-  const parsed=normalizeAnalyst(body);
-  return {parsed,requestId:body.request_id||response.headers.get('x-snowflake-request-id')||''};
+  let lastError='Snowflake Cortex Analyst request failed.';
+  for(let attempt=0;attempt<3;attempt++){
+    try{
+      const response=await fetchWithTimeout(base+'/api/v2/cortex/analyst/message',{
+        method:'POST',
+        headers:snowHeaders(pat),
+        body:JSON.stringify({
+          messages:[{role:'user',content:[{type:'text',text:prompt}]}],
+          semantic_view:semanticView,
+          stream:false
+        })
+      },50000);
+      const body=await response.json().catch(()=>({}));
+      if(response.ok){
+        const parsed=normalizeAnalyst(body);
+        return {parsed,requestId:body.request_id||response.headers.get('x-snowflake-request-id')||''};
+      }
+      lastError=body.message||body.error||('Snowflake Cortex Analyst returned '+response.status+'.');
+      if(!(response.status===429||response.status>=500))throw Error(lastError);
+    }catch(err){
+      lastError=err&&err.message?err.message:lastError;
+      if(attempt===2)break;
+    }
+    await new Promise(function(resolve){setTimeout(resolve,500*(attempt+1));});
+  }
+  throw Error(lastError);
 }
 
 function looksLikeInterpretationOnly(text){
@@ -480,10 +493,10 @@ export default async function handler(req,res){
   if(!question||question.length>MAX_QUESTION)return send(res,400,{error:`Enter a question between 1 and ${MAX_QUESTION} characters.`});
   const rawContext=req.body?.context&&typeof req.body.context==='object'?req.body.context:null;
   const previousQuestion=String(rawContext?.previousQuestion||'').trim().slice(0,500);
-  const previousAnswer=String(rawContext?.previousAnswer||'').trim().slice(0,650);
+  const previousAnswer=String(rawContext?.previousAnswer||'').trim().slice(0,1200);
   const previousGrounding=String(rawContext?.previousGrounding||'').trim().slice(0,320);
   const previousResult=rawContext?.previousResult&&typeof rawContext.previousResult==='object'?rawContext.previousResult:null;
-  const previousRows=Array.isArray(previousResult?.result?.rows)?previousResult.result.rows.slice(0,6):[];
+  const previousRows=Array.isArray(previousResult?.result?.rows)?previousResult.result.rows.slice(0,12):[];
   const previousColumns=Array.isArray(previousResult?.result?.columns)?previousResult.result.columns.slice(0,16):[];
   const previousPlan=previousResult?.queryPlan&&typeof previousResult.queryPlan==='object'?previousResult.queryPlan:null;
   const previousIntents=Array.isArray(previousResult?.intents)?previousResult.intents.slice(0,8):[];
@@ -784,7 +797,7 @@ export default async function handler(req,res){
         previousAnswer?`Previous Cortex Analyst answer: ${previousAnswer}`:'',
         previousGrounding?`Previous grounding: ${previousGrounding}`:'',
         previousColumns.length?`Previous governed result columns: ${previousColumns.slice(0,16).join(', ')}`:'',
-        previousRows.length?`Previous governed result sample: ${JSON.stringify(previousRows.slice(0,4))}`:'',
+        previousRows.length?`Previous governed result sample: ${JSON.stringify(previousRows.slice(0,8))}`:'',
         'Treat the prior governed result as conversation evidence. Answer the current question with Cortex Analyst using only valid semantic-view facts. Do not invent mappings or operational impacts.'
       ].filter(Boolean).join('\n')
     : '';
