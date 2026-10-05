@@ -25,8 +25,8 @@ npm run test:browser
 For the preferred final-answer path, configure these production variables in Vercel:
 
 ```text
-OPENAI_API_KEY=<secret>
-OPENAI_MODEL=gpt-6-luna
+GEMINI_API_KEY=<secret>
+GEMINI_MODEL=gemini-3.8-flash
 ```
 
 If the key is absent, the application must continue to function through the Snowflake-only fallback.
@@ -55,7 +55,7 @@ Conversation:
 - Trade questions resolve to `ONTOTRAIL_TRADE_RISK_ANALYST`.
 - Nova operational questions resolve to `ONTOTRAIL_NOVA_MOBILITY_ANALYST`.
 - The UI shows a direct business answer, not a query interpretation such as “This is our interpretation of your question”.
-- When `OPENAI_API_KEY` is configured, production logs show the OpenAI synthesis path rather than repeated trial-account Cortex completion warnings.
+- When `GEMINI_API_KEY` is configured, production logs show the Gemini synthesis path rather than repeated trial-account Cortex completion warnings.
 - Generated SQL remains read-only.
 - Follow-up context is retained.
 - No Marketplace signal is described as a confirmed Nova disruption without supporting Nova operational evidence.
