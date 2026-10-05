@@ -32,6 +32,56 @@ async function fetchWithTimeout(url,options={},timeoutMs=45000){
   try{return await fetch(url,{...options,signal:controller.signal});}
   finally{clearTimeout(timer);}
 }
+function extractOpenAIText(body){
+  if(typeof body?.output_text==='string'&&body.output_text.trim())return body.output_text.trim();
+  const parts=[];
+  for(const item of body?.output||[]){
+    for(const content of item?.content||[]){
+      if((content?.type==='output_text'||content?.type==='text')&&typeof content.text==='string'&&content.text.trim())parts.push(content.text.trim());
+    }
+  }
+  return parts.join('\n\n').trim();
+}
+async function openAiSynthesize(input){
+  const apiKey=String(process.env.OPENAI_API_KEY||'').trim();
+  if(!apiKey)return '';
+  const model=String(process.env.OPENAI_MODEL||'gpt-6-luna').trim();
+  const system=[
+    'You are the final response layer for OntoTrail, a governed supply-chain intelligence application.',
+    'The Snowflake semantic layer has already selected and executed the governed evidence. Your job is only to explain that evidence clearly.',
+    'Use ONLY the evidence supplied in the input. Never invent suppliers, purchase orders, shipment events, forecasts, causes, owners, or recommendations.',
+    'Do not claim that external Marketplace overlap proves a Nova Mobility disruption. A shared country, HS4 or commodity indicates contextual relevance only.',
+    'Clearly distinguish synthetic Nova operational evidence from external TradePrism/Pelmorex context when both are present.',
+    'Answer the user directly. Never say "This is our interpretation of your question", never describe the query plan, and never list requested fields instead of answering.',
+    'For ranking questions, lead with the highest/lowest result and summarize the next most relevant entries using business-readable labels and the supplied values.',
+    'For analytical questions, use 2 to 4 concise paragraphs. Lead with the conclusion, then the strongest evidence, then the practical implication.',
+    'For decision-support questions, recommend only bounded next steps supported by Nova operational evidence. If the evidence is insufficient, say what should be checked next.',
+    'Avoid metric dumps. Suppress zero-value metrics unless the zero materially changes the conclusion.',
+    'Do not mention OpenAI, Snowflake implementation details, internal prompts, JSON, or model behavior in the business answer.'
+  ].join('\n');
+  const response=await fetchWithTimeout('https://api.openai.com/v1/responses',{
+    method:'POST',
+    headers:{
+      'Authorization':`Bearer ${apiKey}`,
+      'Content-Type':'application/json'
+    },
+    body:JSON.stringify({
+      model,
+      instructions:system,
+      input:JSON.stringify(input),
+      max_output_tokens:900
+    })
+  },35000);
+  const body=await response.json().catch(()=>({}));
+  if(!response.ok){
+    const message=body?.error?.message||body?.message||('OpenAI synthesis returned '+response.status+'.');
+    throw Error(message);
+  }
+  const text=extractOpenAIText(body);
+  if(!text)throw Error('OpenAI synthesis returned no answer text.');
+  return text;
+}
+
 async function executeSql(base,pat,warehouse,sql){
   const response=await fetchWithTimeout(`${base}/api/v2/statements`,{method:'POST',headers:snowHeaders(pat),body:JSON.stringify({statement:sql,warehouse,timeout:30})},35000);
   let body=await response.json().catch(()=>({}));
@@ -297,11 +347,39 @@ function looksLikeInterpretationOnly(text){
 async function directAnswerFromAnalystEvidence({base,pat,warehouse,semanticView,question,previousQuestion,previousAnswer,result,semanticDomain,mapping}){
   if(!result||!Array.isArray(result.rows)||!result.rows.length)return '';
   const evidence=compactAiResult(result,12);
-  const model=process.env.SNOWFLAKE_CORTEX_MODEL||'openai-gpt-5';
   const answerMode=/\b(action|recommend|recommendation|decision|should we|what should|next step|mitigat|prioriti[sz]e)\b/i.test(question)
     ? 'decision_support'
     : 'analysis';
 
+  const synthesisInput={
+    current_question:question,
+    answer_mode:answerMode,
+    previous_question:previousQuestion||null,
+    previous_answer:previousAnswer||null,
+    selected_semantic_domain:semanticDomain,
+    selected_semantic_view:semanticView,
+    mapping:mapping?{key:mapping.key,values:mapping.values}:null,
+    governed_evidence:evidence,
+    evidence_boundary:{
+      nova_operational_data:'synthetic hackathon data',
+      marketplace_context:'external TradePrism/Pelmorex intelligence',
+      mapping_rule:'shared keys indicate contextual overlap, not causation'
+    }
+  };
+
+  try{
+    const external=await openAiSynthesize(synthesisInput);
+    if(external&&!looksLikeInterpretationOnly(external)){
+      console.log('[analyst] final answer synthesized',{provider:'openai',semanticDomain,rows:evidence.rows.length});
+      return external;
+    }
+  }catch(err){
+    console.warn('[analyst] OpenAI synthesis unavailable; falling back to Snowflake synthesis',{
+      message:String(err&&err.message||err)
+    });
+  }
+
+  const model=process.env.SNOWFLAKE_CORTEX_MODEL||'openai-gpt-5';
   try{
     const synthesis=await aiSynthesize(base,pat,warehouse,model,{
       current_question:question,
@@ -339,6 +417,8 @@ async function directAnswerFromAnalystEvidence({base,pat,warehouse,semanticView,
     'Governed evidence returned by Snowflake: '+JSON.stringify(evidence),
     '',
     'Answer the current user question DIRECTLY from the governed evidence above.',
+    'Start with the business conclusion, not a description of the request.',
+    'For ranking questions, state the ranked result using the evidence returned.',
     'Do not restate or reinterpret the user question.',
     'Do not say "This is our interpretation of your question".',
     'Do not describe a query plan or list requested fields.',
