@@ -32,20 +32,15 @@ async function fetchWithTimeout(url,options={},timeoutMs=45000){
   try{return await fetch(url,{...options,signal:controller.signal});}
   finally{clearTimeout(timer);}
 }
-function extractOpenAIText(body){
-  if(typeof body?.output_text==='string'&&body.output_text.trim())return body.output_text.trim();
-  const parts=[];
-  for(const item of body?.output||[]){
-    for(const content of item?.content||[]){
-      if((content?.type==='output_text'||content?.type==='text')&&typeof content.text==='string'&&content.text.trim())parts.push(content.text.trim());
-    }
-  }
-  return parts.join('\n\n').trim();
+function extractGeminiText(body){
+  const candidates=Array.isArray(body?.candidates)?body.candidates:[];
+  const parts=candidates.flatMap(candidate=>candidate?.content?.parts||[]);
+  return parts.map(part=>typeof part?.text==='string'?part.text.trim():'').filter(Boolean).join('\n\n').trim();
 }
-async function openAiSynthesize(input){
-  const apiKey=String(process.env.OPENAI_API_KEY||'').trim();
+async function geminiSynthesize(input){
+  const apiKey=String(process.env.GEMINI_API_KEY||'').trim();
   if(!apiKey)return '';
-  const model=String(process.env.OPENAI_MODEL||'gpt-6-luna').trim();
+  const model=String(process.env.GEMINI_MODEL||'gemini-3.8-flash').trim();
   const system=[
     'You are the final response layer for OntoTrail, a governed supply-chain intelligence application.',
     'The Snowflake semantic layer has already selected and executed the governed evidence. Your job is only to explain that evidence clearly.',
@@ -57,28 +52,35 @@ async function openAiSynthesize(input){
     'For analytical questions, use 2 to 4 concise paragraphs. Lead with the conclusion, then the strongest evidence, then the practical implication.',
     'For decision-support questions, recommend only bounded next steps supported by Nova operational evidence. If the evidence is insufficient, say what should be checked next.',
     'Avoid metric dumps. Suppress zero-value metrics unless the zero materially changes the conclusion.',
-    'Do not mention OpenAI, Snowflake implementation details, internal prompts, JSON, or model behavior in the business answer.'
+    'Do not mention Gemini, Snowflake implementation details, internal prompts, JSON, or model behavior in the business answer.'
   ].join('\n');
-  const response=await fetchWithTimeout('https://api.openai.com/v1/responses',{
+
+  const endpoint='https://generativelanguage.googleapis.com/v1beta/models/'+encodeURIComponent(model)+':generateContent';
+  const response=await fetchWithTimeout(endpoint,{
     method:'POST',
     headers:{
-      'Authorization':`Bearer ${apiKey}`,
+      'x-goog-api-key':apiKey,
       'Content-Type':'application/json'
     },
     body:JSON.stringify({
-      model,
-      instructions:system,
-      input:JSON.stringify(input),
-      max_output_tokens:900
+      systemInstruction:{parts:[{text:system}]},
+      contents:[{
+        role:'user',
+        parts:[{text:JSON.stringify(input)}]
+      }],
+      generationConfig:{
+        temperature:0.2,
+        maxOutputTokens:900
+      }
     })
   },35000);
   const body=await response.json().catch(()=>({}));
   if(!response.ok){
-    const message=body?.error?.message||body?.message||('OpenAI synthesis returned '+response.status+'.');
+    const message=body?.error?.message||body?.message||('Gemini synthesis returned '+response.status+'.');
     throw Error(message);
   }
-  const text=extractOpenAIText(body);
-  if(!text)throw Error('OpenAI synthesis returned no answer text.');
+  const text=extractGeminiText(body);
+  if(!text)throw Error('Gemini synthesis returned no answer text.');
   return text;
 }
 
@@ -368,13 +370,13 @@ async function directAnswerFromAnalystEvidence({base,pat,warehouse,semanticView,
   };
 
   try{
-    const external=await openAiSynthesize(synthesisInput);
+    const external=await geminiSynthesize(synthesisInput);
     if(external&&!looksLikeInterpretationOnly(external)){
-      console.log('[analyst] final answer synthesized',{provider:'openai',semanticDomain,rows:evidence.rows.length});
+      console.log('[analyst] final answer synthesized',{provider:'gemini',semanticDomain,rows:evidence.rows.length});
       return external;
     }
   }catch(err){
-    console.warn('[analyst] OpenAI synthesis unavailable; falling back to Snowflake synthesis',{
+    console.warn('[analyst] Gemini synthesis unavailable; falling back to Snowflake synthesis',{
       message:String(err&&err.message||err)
     });
   }
