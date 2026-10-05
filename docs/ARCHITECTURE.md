@@ -36,7 +36,7 @@ Vercel /api/analyst
              |
              v
       server-side answer synthesis
-        |-- OpenAI Responses API when configured
+        |-- Gemini API when configured
         \-- Snowflake-only fallback
              |
              v
@@ -47,7 +47,7 @@ The Snowflake PAT is never embedded in browser JavaScript.
 
 ## Final-answer synthesis boundary
 
-Cortex Analyst remains the governed query engine. It selects the semantic view, produces governed SQL and returns Snowflake evidence. When `OPENAI_API_KEY` is configured, OntoTrail sends only the current question, limited conversation context and compact governed result rows to the OpenAI Responses API for prose synthesis.
+Cortex Analyst remains the governed query engine. It selects the semantic view, produces governed SQL and returns Snowflake evidence. When `GEMINI_API_KEY` is configured, OntoTrail sends only the current question, limited conversation context and compact governed result rows to the Gemini API for prose synthesis.
 
 The external model has no Snowflake credentials and no database access. It is instructed to use only supplied evidence, distinguish synthetic Nova operational evidence from TradePrism/Pelmorex context, avoid unsupported causation and avoid recommendations unless justified by internal evidence.
 
