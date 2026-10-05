@@ -27,7 +27,7 @@ Authenticated browser
   -> Snowflake SQL API
   -> governed rows
   -> server-side answer synthesis
-       -> OpenAI Responses API when OPENAI_API_KEY is configured
+       -> Gemini API when GEMINI_API_KEY is configured
        -> Snowflake-only fallback otherwise
   -> direct business answer
 ```
@@ -88,11 +88,11 @@ SNOWFLAKE_NOVA_SEMANTIC_VIEW=ONTOTRAIL.SUPPLY_CHAIN.ONTOTRAIL_NOVA_MOBILITY_ANAL
 Optional external answer synthesis:
 
 ```text
-OPENAI_API_KEY
-OPENAI_MODEL=gpt-6-luna
+GEMINI_API_KEY
+GEMINI_MODEL=gemini-3.8-flash
 ```
 
-`OPENAI_API_KEY` is used only by the server-side final-answer layer. The external model receives the user question plus governed Snowflake result rows; it does not receive the Snowflake PAT and it has no database access. If the key is absent or the request fails, OntoTrail falls back to its Snowflake-only response path.
+`GEMINI_API_KEY` is used only by the server-side final-answer layer. Gemini receives the user question plus governed Snowflake result rows; it does not receive the Snowflake PAT and it has no database access. If the key is absent or the request fails, OntoTrail falls back to its Snowflake-only response path.
 
 Authentication:
 
@@ -183,7 +183,7 @@ vercel.json           Deployment and security configuration
 ## Security notes
 
 - Snowflake credentials remain server-side.
-- OpenAI credentials remain server-side.
+- Gemini credentials remain server-side.
 - External synthesis receives only governed result rows and conversation context, never the Snowflake PAT or direct database access.
 - `/api/analyst`, `/api/trade-dashboard`, tenant admin APIs and decision notifications require a valid signed workspace session.
 - Generated SQL is accepted only when it is read-only `SELECT`/`WITH` SQL.
