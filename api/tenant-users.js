@@ -3,17 +3,17 @@ const headers={'Content-Type':'application/json','Cache-Control':'no-store, priv
 const store=new Map();
 function send(res,status,body){res.statusCode=status;for(const [k,v] of Object.entries(headers))res.setHeader(k,v);res.end(JSON.stringify(body));}
 function seed(){return [
-  {id:'coco-admin',name:'CoCo CLI Hackathon Admin',email:String(process.env.ONTOTRAIL_CLIENT_ADMIN_EMAIL||'client.admin@cococli.demo'),role:'Client Admin',status:'Active'},
-  {id:'coco-user',name:'CoCo CLI Hackathon User',email:String(process.env.ONTOTRAIL_CLIENT_EMAIL||'jury@cococli.demo'),role:'Client User',status:'Active'}
+  {id:'coco-admin',name:'Nova Mobility India Admin',email:String(process.env.ONTOTRAIL_CLIENT_ADMIN_EMAIL||'client.admin@novamobility.demo'),role:'Client Admin',status:'Active'},
+  {id:'coco-user',name:'Nova Mobility India User',email:String(process.env.ONTOTRAIL_CLIENT_EMAIL||'client.user@novamobility.demo'),role:'Client User',status:'Active'}
 ];}
-function key(session){return session.tenant||'CoCo CLI Hackathon';}
+function key(session){return session.tenant||'Nova Mobility India';}
 function usersFor(session){if(!store.has(key(session)))store.set(key(session),seed());return store.get(key(session));}
 export default async function handler(req,res){
   const session=readSession(req);
   if(!session)return send(res,401,{error:'Authentication required.'});
   if(!['client_admin','platform_admin'].includes(session.role))return send(res,403,{error:'Administrator access required.'});
   const users=usersFor(session);
-  if(req.method==='GET')return send(res,200,{tenant:'CoCo CLI Hackathon',users});
+  if(req.method==='GET')return send(res,200,{tenant:key(session),users});
   if(req.method==='POST'){
     const action=String(req.body?.action||'invite');
     if(action==='invite'){
