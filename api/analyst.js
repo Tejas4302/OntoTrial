@@ -294,9 +294,41 @@ async function runSemanticAnalyst(base,pat,semanticView,prompt){
 function looksLikeInterpretationOnly(text){
   return /this is (our|my) interpretation of your question|interpretation of your question|here is how i interpreted|the question is asking/i.test(String(text||''));
 }
-async function directAnswerFromAnalystEvidence({base,pat,semanticView,question,previousQuestion,previousAnswer,result,semanticDomain,mapping}){
+async function directAnswerFromAnalystEvidence({base,pat,warehouse,semanticView,question,previousQuestion,previousAnswer,result,semanticDomain,mapping}){
   if(!result||!Array.isArray(result.rows)||!result.rows.length)return '';
   const evidence=compactAiResult(result,12);
+  const model=process.env.SNOWFLAKE_CORTEX_MODEL||'openai-gpt-5';
+  const answerMode=/\b(action|recommend|recommendation|decision|should we|what should|next step|mitigat|prioriti[sz]e)\b/i.test(question)
+    ? 'decision_support'
+    : 'analysis';
+
+  try{
+    const synthesis=await aiSynthesize(base,pat,warehouse,model,{
+      current_question:question,
+      orchestration_plan:{
+        request_type:'single_domain',
+        source_domain:semanticDomain==='nova-operations'?'nova':'trade',
+        target_domain:'none',
+        answer_mode:answerMode,
+        evidence_strategy:'reuse_previous',
+        caution:'Use only the supplied governed evidence.'
+      },
+      previous_question:previousQuestion||null,
+      previous_answer:previousAnswer||null,
+      selected_semantic_domain:semanticDomain,
+      selected_semantic_view:semanticView,
+      mapping:mapping?{key:mapping.key,values:mapping.values}:null,
+      previous_governed_evidence:{columns:[],rows:[]},
+      current_governed_evidence:evidence
+    });
+    const text=String(synthesis&&synthesis.combined_answer||'').trim();
+    if(text&&!looksLikeInterpretationOnly(text))return text;
+  }catch(err){
+    console.warn('[analyst] Cortex AI synthesis unavailable; falling back to Analyst final-answer pass',{
+      message:String(err&&err.message||err)
+    });
+  }
+
   const prompt=[
     'ONTO TRAIL FINAL ANSWER',
     'Current user question: '+question,
@@ -427,7 +459,7 @@ async function contextualAnalystOrchestration({base,pat,warehouse,question,previ
   let chosenText='';
   try{
     chosenText=await directAnswerFromAnalystEvidence({
-      base,pat,
+      base,pat,warehouse,
       semanticView:chosen.semanticView,
       question,
       previousQuestion,
@@ -924,6 +956,7 @@ export default async function handler(req,res){
         const synthesized=await directAnswerFromAnalystEvidence({
           base,
           pat,
+          warehouse,
           semanticView,
           question,
           previousQuestion,
