@@ -1,27 +1,37 @@
 # Evaluation guide
 
-OntoTrail should be evaluated as a traceable supply-chain analytics and scenario-planning demonstration.
+OntoTrail should be evaluated as a governed supply-chain intelligence and decision-support prototype.
 
 ## What to inspect
 
-- Natural-language questions are grounded through a Snowflake semantic view rather than answered from unrestricted free text.
-- Analytical responses provide a direct business answer followed by the supporting result set and visualization.
-- Generated SQL remains available for inspection.
-- Scenario analysis distinguishes baseline, disruption and recovery rather than combining alternative scenarios.
-- The demo tenant uses synthetic records and does not expose customer data.
-- Snowflake credentials remain on the server side.
+- Natural-language questions are grounded through Snowflake semantic views rather than unrestricted free text.
+- Analytical responses give a direct business answer and retain generated SQL/result evidence for auditability.
+- The system distinguishes external Marketplace context from synthetic Nova Mobility operational evidence.
+- Cross-domain mappings use governed keys and do not claim causation.
+- Scenario analysis is separate from live Marketplace/Nova semantic analytics.
+- Snowflake credentials remain server-side.
 
 ## Suggested walkthrough
 
-Start with the control tower, inspect a disruption, open the scenario lab, then use Ask OntoTrail to compare `ARUNA_4D` with `ARUNA_4D_RECOVERY`. Follow with a supplier or product ranking question and inspect the generated SQL audit trail.
-
-## Scope
-
-Exposure is order value at risk, not forecast lost revenue. The deterministic scenario engine is an explainable planning heuristic. The public login is a demonstration identity, not production authentication.
-
+1. Open Control Tower and identify a Nova operational exposure.
+2. Ask the AI Analyst a Marketplace question such as:
+   `Among countries with weather coverage, which have the highest import exposure and weather risk?`
+3. Follow with:
+   `What does this mean for Nova?`
+4. Inspect the Nova operational evidence and generated SQL.
+5. Convert the grounded result into a proposed decision.
+6. Open the Decision Board and inspect the action, owner, due date and status.
 
 ## Challenge-alignment checks
 
-1. Ask the same exposure question using the Planning, Procurement and Logistics prompts in **Metric governance** and verify that all resolve to the same canonical exposure definition.
-2. Test canonical KPI questions for on-time delivery rate, fill rate, days of inventory and landed cost.
-3. Expand the generated SQL audit trail to confirm the result is grounded in `ONTOTRAIL_COCO_ANALYST`.
+- Ask the same business concept with different wording and confirm it resolves to the same governed metric.
+- Test trade exposure, transport dependency, weather coverage, supplier risk, inventory health and PO exposure.
+- Expand generated SQL to verify grounding against the intended semantic view.
+- Confirm TradePrism/Pelmorex data is described as external context.
+- Confirm Nova operational records are described as synthetic hackathon data.
+
+## Scope
+
+The prototype does not claim that a shared country, commodity or HS4 mapping proves a supplier disruption. Exposure and weather context are decision-support signals only unless internal Nova evidence confirms an operational issue.
+
+The Decision Board and chat history use prototype browser persistence rather than a shared enterprise database.
