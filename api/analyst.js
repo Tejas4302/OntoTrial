@@ -918,6 +918,27 @@ export default async function handler(req,res){
       }catch{}
     }
 
+    let finalText=String(parsed.text||'').trim();
+    if(result?.rows?.length){
+      try{
+        const synthesized=await directAnswerFromAnalystEvidence({
+          base,
+          pat,
+          semanticView,
+          question,
+          previousQuestion,
+          previousAnswer,
+          result,
+          semanticDomain:domain==='nova'?'nova-operations':'india-trade-risk',
+          mapping:null
+        });
+        if(synthesized)finalText=synthesized;
+      }catch{}
+    }
+    if(!finalText||looksLikeInterpretationOnly(finalText)){
+      return send(res,502,{error:'Cortex Analyst returned governed evidence but did not produce a direct business answer. Please try again.'});
+    }
+
     return send(res,200,{
       source:'snowflake-cortex-analyst',
       requestId:body.request_id||'',
@@ -926,7 +947,7 @@ export default async function handler(req,res){
       intents:intents.map(x=>x.id),
       datasetCoverage:{dimensions:profile.dimensions.length,metrics:profile.metrics.length},
       warehouse,
-      text:parsed.text,
+      text:finalText,
       sql:sql||'',
       suggestions:parsed.suggestions,
       result,
