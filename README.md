@@ -1,42 +1,66 @@
 # OntoTrail
 
-OntoTrail is a supply-chain intelligence workspace for tracing disruption impact across suppliers, products, plants, customers and orders. The CoCo CLI Hackathon workspace combines scenario analysis with Snowflake Cortex Analyst so authenticated users can ask business questions in natural language and inspect the grounded result, visualization, table and generated SQL.
+OntoTrail is a governed supply-chain intelligence workspace for the Hack2Skill Snowflake CoCo challenge. The current prototype is framed around the fictional client **Nova Mobility India** and combines:
 
-**Client workspace:** CoCo CLI Hackathon  
-**Dataset snapshot:** 18 September 2026  
-**Access model:** Authenticated tenant workspace
+- synthetic Nova Mobility supplier, material, PO, shipment and inventory records;
+- Oxford Economics TradePrism bilateral trade intelligence;
+- Pelmorex Weather Source: Frostbyte;
+- Snowflake Cortex Analyst over governed semantic views;
+- a Decision Board and scenario workspace for turning evidence into action.
 
-## Client access
-
-The deployed demo uses server-side authentication. Jury credentials are distributed privately and are not stored in this public repository or browser JavaScript.
-
-Unauthenticated visitors can view only the public product landing page and login screen. Workspace routes redirect to login when no valid session is present, and the Snowflake analytics endpoint rejects unauthenticated requests.
-
-## Key capabilities
-
-| Area | Capability |
-| --- | --- |
-| Control tower | Exposure, coverage, supplier status and disruption KPIs |
-| Supply network | Trace supplier, shipment, component and order relationships |
-| Scenario lab | Compare baseline, disruption and recovery scenarios |
-| Ask OntoTrail | Natural-language analytics grounded through Snowflake Cortex Analyst |
-| Results | Direct business answer, dynamic visualization, filters and detailed table |
-| Auditability | Generated SQL available as a collapsed audit trail |
-| Access | Authenticated client session with explicit logout |
-
-## Snowflake architecture
+The core demo flow is:
 
 ```text
-Authenticated browser session
-  -> /api/analyst
-  -> Snowflake Cortex Analyst
-  -> ONTOTRAIL.SUPPLY_CHAIN.ONTOTRAIL_COCO_ANALYST
-  -> governed SQL
-  -> Snowflake SQL API
-  -> OntoTrail result UI
+External signal -> internal exposure -> AI reasoning -> scenario -> decision
 ```
 
-The browser never receives the Snowflake Programmatic Access Token. The server endpoint accepts Cortex-generated read-only queries and rejects non-read-only SQL before execution.
+## Current Snowflake architecture
+
+```text
+Authenticated browser
+  -> /api/analyst
+  -> governed domain routing
+  -> Snowflake Cortex Analyst
+       -> ONTOTRAIL_TRADE_RISK_ANALYST
+       -> ONTOTRAIL_NOVA_MOBILITY_ANALYST
+  -> read-only generated SQL
+  -> Snowflake SQL API
+  -> governed rows
+  -> direct business answer
+```
+
+The browser never receives the Snowflake Programmatic Access Token.
+
+## Data boundary
+
+Nova Mobility India is a fictional hackathon client. The internal `NOVA_*` operational records are synthetic.
+
+TradePrism and Pelmorex are external Snowflake Marketplace sources. They provide contextual trade and weather intelligence and must not be presented as Nova Mobility proprietary transaction data.
+
+Shared country, HS4 or commodity keys indicate contextual overlap only. They do not prove causation or a confirmed disruption.
+
+## Required Snowflake setup
+
+Marketplace products expected in the current account:
+
+- `TRADEPRISM_FULL_DATASET.PUBLIC.TRADEPRISM_DATA`
+- `PELMOREX_WEATHER_SOURCE_FROSTBYTE.ONPOINT_ID.FORECAST_DAY`
+
+Run the current setup in this order:
+
+```text
+snowflake/00_marketplace_trade_weather_enrichment.sql
+snowflake/02_marketplace_trade_weather_semantic_view.sql
+snowflake/03_nova_mobility_internal_operations.sql
+snowflake/04_nova_mobility_semantic_view.sql
+```
+
+This produces the two semantic views used by the application:
+
+- `ONTOTRAIL.SUPPLY_CHAIN.ONTOTRAIL_TRADE_RISK_ANALYST`
+- `ONTOTRAIL.SUPPLY_CHAIN.ONTOTRAIL_NOVA_MOBILITY_ANALYST`
+
+`snowflake/01_coco_cli_demo_dataset.sql` is an optional legacy/demo asset and is not required for the current Nova Mobility + Marketplace application path.
 
 ## Required Vercel environment variables
 
@@ -45,8 +69,17 @@ Snowflake:
 ```text
 SNOWFLAKE_PAT
 SNOWFLAKE_ACCOUNT_URL
-SNOWFLAKE_SEMANTIC_VIEW
 SNOWFLAKE_WAREHOUSE
+SNOWFLAKE_SEMANTIC_VIEW
+SNOWFLAKE_NOVA_SEMANTIC_VIEW
+```
+
+Recommended current values:
+
+```text
+SNOWFLAKE_WAREHOUSE=ONTOTRAIL_WH
+SNOWFLAKE_SEMANTIC_VIEW=ONTOTRAIL.SUPPLY_CHAIN.ONTOTRAIL_TRADE_RISK_ANALYST
+SNOWFLAKE_NOVA_SEMANTIC_VIEW=ONTOTRAIL.SUPPLY_CHAIN.ONTOTRAIL_NOVA_MOBILITY_ANALYST
 ```
 
 Authentication:
@@ -55,25 +88,20 @@ Authentication:
 ONTOTRAIL_AUTH_SECRET
 ONTOTRAIL_CLIENT_EMAIL
 ONTOTRAIL_CLIENT_PASSWORD
-ONTOTRAIL_ADMIN_EMAIL          # optional
-ONTOTRAIL_ADMIN_PASSWORD       # optional
+ONTOTRAIL_CLIENT_ADMIN_EMAIL
+ONTOTRAIL_CLIENT_ADMIN_PASSWORD
+ONTOTRAIL_ADMIN_EMAIL
+ONTOTRAIL_ADMIN_PASSWORD
 ```
 
-`ONTOTRAIL_AUTH_SECRET` should be a long random value and must never be committed. Client and administrator passwords must remain Vercel secrets.
+Optional decision email delivery:
 
-## CoCo CLI data model
+```text
+RESEND_API_KEY
+DECISION_EMAIL_FROM
+```
 
-The Snowflake demo model contains 72 orders represented across three governed scenarios, producing 216 analytical rows. It spans 12 suppliers, 8 customers, 12 products and 4 plants.
-
-The governed scenarios are:
-
-- `BASELINE`
-- `ARUNA_4D`
-- `ARUNA_4D_RECOVERY`
-
-Exposure represents order value at risk in the scenario; it is not claimed lost revenue. Scenario rows remain separate and must not be aggregated into a single grand total.
-
-The Snowflake setup script is available at `snowflake/01_coco_cli_demo_dataset.sql`. It creates the client demo table and the separate `ONTOTRAIL_COCO_ANALYST` semantic view without replacing the original `ONTOTRAIL_ANALYST` view.
+Secrets must remain in Vercel environment variables and must never be committed.
 
 ## Run locally
 
@@ -84,79 +112,72 @@ npm ci --ignore-scripts
 npm run dev
 ```
 
-For full authenticated API testing, provide the same environment variables locally. Static/domain verification can be run with:
+Run source verification, tests and a production build with:
 
 ```bash
 npm run verify
 ```
 
-## Deploy to Vercel
+The verification step checks browser code, serverless API code, authentication utilities, scripts and tests for syntax/import integrity before building `dist/`.
 
-1. Import this repository into Vercel.
-2. Use Node.js 22.x.
-3. Keep the build configuration from `vercel.json`.
-4. Configure Snowflake and authentication environment variables in Vercel.
-5. Deploy from the production branch.
-6. Confirm that unauthenticated workspace URLs redirect to login.
-7. Confirm login, logout and Cortex Analyst access before sharing the demo.
+## Key capabilities
+
+| Area | Capability |
+| --- | --- |
+| AI Analyst | Natural-language analysis grounded in governed Snowflake semantic views |
+| Control tower | India import exposure plus Nova Mobility operational risk |
+| Nova operations | Supplier, PO, material, shipment, plant and inventory views |
+| Marketplace intel | TradePrism transport/exposure and Pelmorex weather context |
+| Scenario lab | Deterministic structural stress testing |
+| Decision Board | Convert grounded findings into tracked proposed actions |
+| Metric governance | Canonical metric definitions and question-routing guardrails |
+| Security | Server-side Snowflake PAT and signed HttpOnly workspace session |
+
+## Recommended demo questions
+
+Trade / Marketplace:
+
+- `Which India imports are most dependent on sea transport in 2026?`
+- `Among countries with weather coverage, which have the highest import exposure and weather risk?`
+- `Explain Rest of World import exposure in 2026 including commodity concentration and weather coverage.`
+
+Nova Mobility:
+
+- `Which suppliers currently have the lowest inventory coverage for Nova Mobility?`
+- `Why is Siam Thermal Solutions a supply-chain risk for Nova Mobility, and which purchase orders, materials and inventory positions need attention?`
+- `How could the current external weather and TradePrism transport context affect Nova Mobility exposure to Aichi Drive Technologies?`
+
+Follow-up:
+
+- `What does this mean for Nova?`
+- `What action should we take?`
 
 ## Repository structure
 
 ```text
-api/                 Server-side authentication and Cortex Analyst bridge
-lib/                 Server-side session signing utilities
+api/                 Server-side auth, Cortex Analyst bridge and dashboard APIs
+lib/                 Session signing utilities
 public/              HTML shell, styles and static assets
-src/domain/           Scenario and allocation domain logic
-src/services/         Cortex client and browser persistence
+src/domain/           Deterministic scenario logic
+src/services/         Browser API clients and persistence
 src/ui/               UI rendering and formatting
-snowflake/            Demo dataset and semantic-view setup
-scripts/              Build and local development utilities
-tests/                Domain, view and HTTP tests
-docs/                 Architecture, evaluation and testing notes
+snowflake/            Marketplace enrichment, operational data and semantic views
+scripts/              Build, verification and local development
+tests/                Domain, routing, view and HTTP tests
+docs/                 Architecture, testing and evaluation notes
 vercel.json           Deployment and security configuration
 ```
 
-## Security
+## Security notes
 
-Snowflake credentials remain server-side. Authentication uses an HttpOnly, Secure, SameSite session cookie signed with `ONTOTRAIL_AUTH_SECRET`. `/api/analyst` requires a valid session before accessing Snowflake.
-
-For a production multi-tenant deployment, tenant authorization should also be enforced in the data layer for every query, with least-privilege Snowflake roles, centralized identity, durable audit records and a production network/authentication strategy.
+- Snowflake credentials remain server-side.
+- `/api/analyst`, `/api/trade-dashboard`, tenant admin APIs and decision notifications require a valid signed workspace session.
+- Generated SQL is accepted only when it is read-only `SELECT`/`WITH` SQL.
+- PAT access should use the least-privilege `ONTOTRAIL_APP_ROLE`.
+- Production multi-tenant use would additionally require durable identity, row/tenant authorization in the data layer, persistent audit storage, rate limits and production-grade observability.
 
 ## Documentation
 
 - [Architecture](docs/ARCHITECTURE.md)
 - [Testing](docs/TESTING.md)
 - [Evaluation notes](docs/EVALUATION.md)
-
-
-## Role model
-
-OntoTrail uses three demo roles:
-
-- **OntoTrail Platform Admin** — manages client organizations and account metadata. Configure with `ONTOTRAIL_ADMIN_EMAIL` and `ONTOTRAIL_ADMIN_PASSWORD`.
-- **Client Admin** — manages users inside the CoCo CLI Hackathon tenant and can use the client workspace. Configure with `ONTOTRAIL_CLIENT_ADMIN_EMAIL` and `ONTOTRAIL_CLIENT_ADMIN_PASSWORD`.
-- **Client User** — uses the CoCo CLI Hackathon planning and analytics workspace. Configure with `ONTOTRAIL_CLIENT_EMAIL` and `ONTOTRAIL_CLIENT_PASSWORD`.
-
-All credentials remain in Vercel environment variables. Do not commit passwords or tokens to the repository.
-
-## Decision email notifications
-
-Decision Board email delivery uses Resend through the server-side `/api/decision-notify` function. Add these Vercel environment variables for Production:
-
-- `RESEND_API_KEY` - Resend API key (Secret)
-- `DECISION_EMAIL_FROM` - verified sender, for example `OntoTrail <decisions@yourdomain.com>`
-
-If email delivery is not configured, decisions and status history still work; the UI marks the notification as pending configuration. No email credentials are stored in the browser or repository.
-
-
-## Governed metric demo
-
-The CoCo CLI semantic view now includes canonical supply-chain KPIs for on-time delivery rate, fill rate, days of inventory, landed cost, exposure, order value, quantity and delay. The client workspace includes a **Metric governance** page that demonstrates how Planning, Procurement and Logistics can phrase the same business question differently while resolving to the same canonical Snowflake metric.
-
-Suggested jury checks:
-
-- Planning: `What is the total exposure in ARUNA_4D?`
-- Procurement: `What is the total supplier risk exposure for ARUNA_4D?`
-- Logistics: `What is the total exposed order value in ARUNA_4D?`
-
-All three are governed by `total_exposure_inr`.
