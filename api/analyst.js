@@ -34,13 +34,14 @@ async function fetchWithTimeout(url,options={},timeoutMs=45000){
 }
 function extractGeminiText(body){
   const candidates=Array.isArray(body?.candidates)?body.candidates:[];
-  const parts=candidates.flatMap(candidate=>candidate?.content?.parts||[]);
+  const parts=(candidates[0]?.content?.parts||[]).filter(part=>!part.thought);
   return parts.map(part=>typeof part?.text==='string'?part.text.trim():'').filter(Boolean).join('\n\n').trim();
 }
 async function geminiSynthesize(input){
-  const apiKey=String(process.env.GEMINI_API_KEY||'').trim();
+  const vertexKey=String(process.env.VERTEX_API_KEY||'').trim();
+  const apiKey=vertexKey||String(process.env.GEMINI_API_KEY||'').trim();
   if(!apiKey)return '';
-  const model=String(process.env.GEMINI_MODEL||'gemini-3.8-flash').trim();
+  const model=String((vertexKey?process.env.VERTEX_MODEL:process.env.GEMINI_MODEL)||'gemini-2.5-flash').trim();
   const system=[
     'You are the final response layer for OntoTrail, a governed supply-chain intelligence application.',
     'The Snowflake semantic layer has already selected and executed the governed evidence. Your job is only to explain that evidence clearly.',
@@ -50,12 +51,15 @@ async function geminiSynthesize(input){
     'Answer the user directly. Never say "This is our interpretation of your question", never describe the query plan, and never list requested fields instead of answering.',
     'For ranking questions, lead with the highest/lowest result and summarize the next most relevant entries using business-readable labels and the supplied values.',
     'For analytical questions, use 2 to 4 concise paragraphs. Lead with the conclusion, then the strongest evidence, then the practical implication.',
-    'For decision-support questions, recommend only bounded next steps supported by Nova operational evidence. If the evidence is insufficient, say what should be checked next.',
+    'For decision-support questions, recommend only bounded next steps supported by the supplied evidence. If internal operational evidence is absent, state that company-specific impacts cannot be established from trade flows.',
     'Avoid metric dumps. Suppress zero-value metrics unless the zero materially changes the conclusion.',
     'Do not mention Gemini, Snowflake implementation details, internal prompts, JSON, or model behavior in the business answer.'
   ].join('\n');
 
-  const endpoint='https://generativelanguage.googleapis.com/v1beta/models/'+encodeURIComponent(model)+':generateContent';
+  // Vertex Express keys and AI Studio keys use separate endpoints.
+  const endpoint=vertexKey
+    ? 'https://aiplatform.googleapis.com/v1/publishers/google/models/'+encodeURIComponent(model)+':generateContent'
+    : 'https://generativelanguage.googleapis.com/v1beta/models/'+encodeURIComponent(model)+':generateContent';
   const response=await fetchWithTimeout(endpoint,{
     method:'POST',
     headers:{
@@ -372,7 +376,7 @@ async function directAnswerFromAnalystEvidence({base,pat,warehouse,semanticView,
   try{
     const external=await geminiSynthesize(synthesisInput);
     if(external&&!looksLikeInterpretationOnly(external)){
-      console.log('[analyst] final answer synthesized',{provider:'gemini',semanticDomain,rows:evidence.rows.length});
+      console.log('[analyst] final answer synthesized',{provider:process.env.VERTEX_API_KEY?'vertex':'gemini',semanticDomain,rows:evidence.rows.length});
       return external;
     }
   }catch(err){
@@ -404,9 +408,10 @@ async function directAnswerFromAnalystEvidence({base,pat,warehouse,semanticView,
     const text=String(synthesis&&synthesis.combined_answer||'').trim();
     if(text&&!looksLikeInterpretationOnly(text))return text;
   }catch(err){
-    console.warn('[analyst] Cortex AI synthesis unavailable; falling back to Analyst final-answer pass',{
-      message:String(err&&err.message||err)
-    });
+    const message=String(err&&err.message||err);
+    console.warn('[analyst] Cortex AI synthesis unavailable',{message});
+    // Analyst generates SQL; repeating it cannot restore a disabled completion service.
+    if(/not available for trial accounts|not allowed to access this endpoint/i.test(message))return '';
   }
 
   const prompt=[
@@ -504,7 +509,7 @@ async function contextualAnalystOrchestration({base,pat,warehouse,question,previ
 
   const settled=await Promise.allSettled([
     runSemanticAnalyst(base,pat,tradeSemanticView,tradePrompt),
-    runSemanticAnalyst(base,pat,novaSemanticView,novaPrompt)
+    novaSemanticView?runSemanticAnalyst(base,pat,novaSemanticView,novaPrompt):Promise.resolve(null)
   ]);
 
   const candidates=[];
@@ -515,7 +520,7 @@ async function contextualAnalystOrchestration({base,pat,warehouse,question,previ
 
   for(let i=0;i<settled.length;i++){
     const item=settled[i];
-    if(item.status!=='fulfilled')continue;
+    if(item.status!=='fulfilled'||!item.value)continue;
     const spec=specs[i];
     const parsed=item.value.parsed;
     const sql=safeSelect(parsed.sql);
@@ -599,7 +604,7 @@ export default async function handler(req,res){
   const pat=process.env.SNOWFLAKE_PAT;
   const base=cleanBase(process.env.SNOWFLAKE_ACCOUNT_URL);
   const tradeSemanticView=process.env.SNOWFLAKE_SEMANTIC_VIEW;
-  const novaSemanticView=process.env.SNOWFLAKE_NOVA_SEMANTIC_VIEW||'ONTOTRAIL.SUPPLY_CHAIN.ONTOTRAIL_NOVA_MOBILITY_ANALYST';
+  const novaSemanticView=String(process.env.SNOWFLAKE_NOVA_SEMANTIC_VIEW||'').trim();
   const warehouse=process.env.SNOWFLAKE_WAREHOUSE;
   if(!pat||!base||!tradeSemanticView||!warehouse)return send(res,500,{error:'OntoTrail AI is not fully configured.'});
 
@@ -622,7 +627,7 @@ export default async function handler(req,res){
   let aiPlan=null;
   let aiPlannerWarning='';
   try{
-    if(enableGeneralPlanner)aiPlan=await aiPlanQuestion(base,pat,warehouse,aiModel,{
+    if(enableGeneralPlanner&&novaSemanticView)aiPlan=await aiPlanQuestion(base,pat,warehouse,aiModel,{
       question,
       previous_question:previousQuestion||null,
       previous_answer:previousAnswer||null,
@@ -878,7 +883,8 @@ export default async function handler(req,res){
 
   const classification=classifyQuestion(classificationQuestion);
   const operationalFollowup=plan.type==='operational_impact_followup';
-  const domain=plan.domain||classification.domain;
+  const requestedDomain=plan.domain||classification.domain;
+  const domain=novaSemanticView?requestedDomain:'trade';
   let intents=classification.intents;
   if(operationalFollowup&&!intents.some(x=>x.id==='cross_domain')){
     const cross=classifyQuestion(`${previousQuestion}\nFOLLOW-UP: Nova operations ${question}`).intents.find(x=>x.id==='cross_domain');
@@ -892,7 +898,7 @@ export default async function handler(req,res){
   const rowGuidance=rowIntent
     ? "Governed ROW rule: Rest of World/ROW is ORIGIN_ISO = 'ROW'. Filter that aggregate directly. Do not substitute a ranking of other countries. Only report weather for ROW when aggregate-row weather coverage exists."
     : "";
-  const datasetGuidance=buildDatasetGuidance(classificationQuestion,domain,intents);
+  const datasetGuidance=buildDatasetGuidance(classificationQuestion,domain,intents)+(novaSemanticView?'':'\nOnly the India bilateral trade dataset is connected. No internal suppliers, purchase orders, inventory or plants are available. Explain this limitation for operational questions; never infer company operations from country-level trade flows.');
   const dependencyGuidance=plan.type==='transport_dependency_ranking'
     ? [
         'STRICT TRANSPORT DEPENDENCY RULE',
@@ -1033,6 +1039,7 @@ export default async function handler(req,res){
     }
 
     let finalText=String(parsed.text||'').trim();
+    let answerStatus='complete';
     if(result?.rows?.length){
       try{
         const synthesized=await directAnswerFromAnalystEvidence({
@@ -1047,11 +1054,14 @@ export default async function handler(req,res){
           semanticDomain:domain==='nova'?'nova-operations':'india-trade-risk',
           mapping:null
         });
-        if(synthesized)finalText=synthesized;
-      }catch{}
+        finalText=synthesized||'';
+      }catch{finalText='';}
     }
     if(!finalText||looksLikeInterpretationOnly(finalText)){
-      return send(res,502,{error:'Cortex Analyst returned governed evidence but did not produce a direct business answer. Please try again.'});
+      if(!result?.rows?.length)return send(res,502,{error:'No usable answer was returned. Please clarify the question.'});
+      answerStatus='evidence_only';
+      finalText='The query results are available below, but AI answer generation is currently unavailable.';
+      executionWarning=[executionWarning,'The results and SQL are preserved. An administrator needs to configure an available answer-generation provider.'].filter(Boolean).join(' ');
     }
 
     return send(res,200,{
@@ -1063,6 +1073,7 @@ export default async function handler(req,res){
       datasetCoverage:{dimensions:profile.dimensions.length,metrics:profile.metrics.length},
       warehouse,
       text:finalText,
+      answerStatus,
       sql:sql||'',
       suggestions:parsed.suggestions,
       result,

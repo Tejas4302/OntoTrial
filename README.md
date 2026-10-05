@@ -195,3 +195,28 @@ vercel.json           Deployment and security configuration
 - [Architecture](docs/ARCHITECTURE.md)
 - [Testing](docs/TESTING.md)
 - [Evaluation notes](docs/EVALUATION.md)
+
+### Final-answer provider configuration
+
+Cortex Analyst retrieves governed SQL and rows. Final prose requires a separate
+completion service; some Snowflake trial accounts reject Cortex completion even
+when Analyst and SQL work.
+
+- Vertex AI Express mode: set server-only `VERTEX_API_KEY` to a Vertex Express key
+  and `VERTEX_MODEL` to a model available to that key (default `gemini-2.5-flash`).
+  Requests use `https://aiplatform.googleapis.com/v1/publishers/google/models/...`.
+- Gemini Developer API / AI Studio: set server-only `GEMINI_API_KEY` and
+  `GEMINI_MODEL`. This uses `generativelanguage.googleapis.com`, not Vertex.
+- When both keys are set, Vertex takes precedence. A model name alone does not
+  enable either provider. OIDC being enabled does not configure Google workload
+  identity federation; this integration supports Express API keys, not WIF.
+- Add keys as sensitive Vercel Production variables and redeploy. Never commit
+  credentials, expose them in client variables, or paste them into chat.
+- If synthesis is unavailable, the API returns `answerStatus: evidence_only`
+  with the genuine rows and SQL. The UI labels this as results only, not an AI
+  answer. No business narrative is fabricated.
+- `SNOWFLAKE_NOVA_SEMANTIC_VIEW` is optional and has no hardcoded default. Without
+  it, Analyst stays on `SNOWFLAKE_SEMANTIC_VIEW` and states the trade-only boundary.
+
+Vertex Express reference:
+https://cloud.google.com/vertex-ai/generative-ai/docs/start/express-mode/vertex-ai-express-mode-api-reference
