@@ -26,6 +26,9 @@ Authenticated browser
   -> read-only generated SQL
   -> Snowflake SQL API
   -> governed rows
+  -> server-side answer synthesis
+       -> OpenAI Responses API when OPENAI_API_KEY is configured
+       -> Snowflake-only fallback otherwise
   -> direct business answer
 ```
 
@@ -81,6 +84,15 @@ SNOWFLAKE_WAREHOUSE=ONTOTRAIL_WH
 SNOWFLAKE_SEMANTIC_VIEW=ONTOTRAIL.SUPPLY_CHAIN.ONTOTRAIL_TRADE_RISK_ANALYST
 SNOWFLAKE_NOVA_SEMANTIC_VIEW=ONTOTRAIL.SUPPLY_CHAIN.ONTOTRAIL_NOVA_MOBILITY_ANALYST
 ```
+
+Optional external answer synthesis:
+
+```text
+OPENAI_API_KEY
+OPENAI_MODEL=gpt-6-luna
+```
+
+`OPENAI_API_KEY` is used only by the server-side final-answer layer. The external model receives the user question plus governed Snowflake result rows; it does not receive the Snowflake PAT and it has no database access. If the key is absent or the request fails, OntoTrail falls back to its Snowflake-only response path.
 
 Authentication:
 
@@ -171,6 +183,8 @@ vercel.json           Deployment and security configuration
 ## Security notes
 
 - Snowflake credentials remain server-side.
+- OpenAI credentials remain server-side.
+- External synthesis receives only governed result rows and conversation context, never the Snowflake PAT or direct database access.
 - `/api/analyst`, `/api/trade-dashboard`, tenant admin APIs and decision notifications require a valid signed workspace session.
 - Generated SQL is accepted only when it is read-only `SELECT`/`WITH` SQL.
 - PAT access should use the least-privilege `ONTOTRAIL_APP_ROLE`.
