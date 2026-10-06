@@ -56,6 +56,7 @@ if(enabled){
   ];
   const sql=(await Promise.all(files.map(file=>readFile(file,'utf8'))))
     .join('\n')
+    .replace(/^USE ROLE\s+[^;]+;\s*$/gmi,'')
     .replace(/^USE WAREHOUSE ONTOTRAIL_WH;\s*$/gmi,'');
 
   await execute(sql,{multi:true});
