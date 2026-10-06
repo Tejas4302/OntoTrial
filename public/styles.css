@@ -1378,3 +1378,23 @@ body.analyst-mode .analyst-suggestions{margin-top:8px;margin-bottom:10px}
     padding-right:16px;
   }
 }
+
+
+/* v3.0.3 — keep the latest Analyst answer fully visible above workflow controls */
+body.analyst-mode .analyst-page-log{
+  padding-bottom:96px;
+  scroll-padding-bottom:96px;
+}
+body.analyst-mode .analyst-page .chat-pair:last-child{
+  padding-bottom:28px;
+}
+body.analyst-mode .analyst-workflow-actions{
+  position:relative;
+  margin-top:18px;
+}
+@media(max-width:980px){
+  body.analyst-mode .analyst-page-log{
+    padding-bottom:72px;
+    scroll-padding-bottom:72px;
+  }
+}
