@@ -55,6 +55,7 @@ export async function geminiSynthesize(input){
     'For analytical questions, use 2 to 4 concise paragraphs. Lead with the conclusion, then the strongest evidence, then the practical implication.',
     'For decision-support questions, recommend only bounded next steps supported by the supplied evidence. If internal operational evidence is absent, state that company-specific impacts cannot be established from trade flows.',
     'Avoid metric dumps. Suppress zero-value metrics unless the zero materially changes the conclusion.',
+    'Return clean plain text only. Do not use Markdown bold or emphasis markers such as **, __, or heading markers. Use short paragraphs and simple hyphen bullets only when they improve readability.',
     'Do not mention Gemini, Snowflake implementation details, internal prompts, JSON, or model behavior in the business answer.'
   ].join('\n');
 
@@ -309,6 +310,7 @@ async function aiSynthesize(base,pat,warehouse,model,input){
     'Only describe confirmed operational disruption when internal data supports it. Otherwise describe monitoring priority, exposure, or potential vulnerability.',
     'Suppress zero-value metrics unless a zero changes the conclusion.',
     'Use 2 to 4 concise paragraphs: direct answer, strongest evidence, then decision implication.',
+    'Return clean plain text only. Do not use Markdown bold or emphasis markers such as ** or __. Use simple hyphen bullets only when useful.',
     'When orchestration_plan.answer_mode is decision_support, recommend an action only when the current Nova evidence supports it. Tie the recommendation to the specific internal evidence that justifies it.',
     'If the evidence shows exposure but not disruption, recommend monitoring, contingency validation, inventory protection, supplier engagement, or scenario testing rather than claiming an alternate source is required.',
     'If the evidence is insufficient for a concrete action, say what should be checked next instead of manufacturing a recommendation.',
@@ -350,6 +352,12 @@ async function runSemanticAnalyst(base,pat,semanticView,prompt){
   throw Error(lastError);
 }
 
+function cleanBusinessAnswer(text){
+  return String(text||'')
+    .replace(/\*\*(.*?)\*\*/g,'$1')
+    .replace(/__(.*?)__/g,'$1')
+    .trim();
+}
 function looksLikeInterpretationOnly(text){
   return /this is (our|my) interpretation of your question|interpretation of your question|here is how i interpreted|the question is asking/i.test(String(text||''));
 }
@@ -380,7 +388,7 @@ async function directAnswerFromAnalystEvidence({base,pat,warehouse,semanticView,
     const external=await geminiSynthesize(synthesisInput);
     if(external&&!looksLikeInterpretationOnly(external)){
       console.log('[analyst] final answer synthesized',{provider:vertexOidcEnabled()?'vertex-oidc':process.env.VERTEX_API_KEY?'vertex':'gemini',semanticDomain,rows:evidence.rows.length});
-      return external;
+      return cleanBusinessAnswer(external);
     }
   }catch(err){
     console.warn('[analyst] Gemini synthesis unavailable; falling back to Snowflake synthesis',{
@@ -409,7 +417,7 @@ async function directAnswerFromAnalystEvidence({base,pat,warehouse,semanticView,
       current_governed_evidence:evidence
     });
     const text=String(synthesis&&synthesis.combined_answer||'').trim();
-    if(text&&!looksLikeInterpretationOnly(text))return text;
+    if(text&&!looksLikeInterpretationOnly(text))return cleanBusinessAnswer(text);
   }catch(err){
     const message=String(err&&err.message||err);
     console.warn('[analyst] Cortex AI synthesis unavailable',{message});
@@ -437,17 +445,18 @@ async function directAnswerFromAnalystEvidence({base,pat,warehouse,semanticView,
     'If the evidence shows exposure but not confirmed disruption, say that clearly.',
     'For an operational implication, explain what the evidence means for Nova in concise business language.',
     'For a decision question, recommend only bounded next steps justified by the evidence; otherwise say what should be checked next.',
-    'Return 2 to 4 concise paragraphs. No SQL is needed because the governed rows are already supplied.'
+    'Return 2 to 4 concise paragraphs. No SQL is needed because the governed rows are already supplied.',
+    'Return clean plain text only. Do not use Markdown bold or emphasis markers such as ** or __. Use simple hyphen bullets only when useful.'
   ].filter(Boolean).join('\n');
 
   const first=await runSemanticAnalyst(base,pat,semanticView,prompt);
   let text=String(first.parsed&&first.parsed.text||'').trim();
-  if(text&&!looksLikeInterpretationOnly(text))return text;
+  if(text&&!looksLikeInterpretationOnly(text))return cleanBusinessAnswer(text);
 
   const retryPrompt=prompt+'\n\nSTRICT FINAL-ANSWER RULE: start with the business conclusion itself. Do not output an interpretation, semantic request, query plan, or field list.';
   const retry=await runSemanticAnalyst(base,pat,semanticView,retryPrompt);
   text=String(retry.parsed&&retry.parsed.text||'').trim();
-  return looksLikeInterpretationOnly(text)?'':text;
+  return looksLikeInterpretationOnly(text)?'':cleanBusinessAnswer(text);
 }
 function contextQuestionTokens(question){
   const stop=new Set(['what','which','that','this','these','those','does','mean','with','from','into','have','will','would','could','should','about','there','their','them','then','than','your','ours','take','action']);
