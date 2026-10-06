@@ -10,7 +10,7 @@
   "scripts": {
     "dev": "node scripts/serve.mjs",
     "preview": "node scripts/serve.mjs --dist",
-    "build": "node scripts/build.mjs && node scripts/verify-vertex.mjs",
+    "build": "node scripts/build.mjs && node scripts/verify-vertex.mjs && node scripts/migrate-nova.mjs",
     "test": "node --test tests/*.test.mjs",
     "test:browser": "node tests/browser.mjs",
     "check": "node scripts/check.mjs",
