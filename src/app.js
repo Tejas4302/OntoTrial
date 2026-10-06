@@ -123,11 +123,19 @@ function analystProgressMarkup(){return `<div class="answer-heading">${icon('cha
 function setAnalystProgress(answerEl,label,step){const labelEl=answerEl.querySelector('[data-progress-label]');if(labelEl)labelEl.textContent=label;answerEl.querySelectorAll('.analyst-progress-steps span').forEach((el,i)=>el.classList.toggle('active',i<=step));}
 async function revealNarrative(container,html){
  const target=container.querySelector('[data-stream-text]');if(!target)return;
+ const log=container.closest('.analyst-page-log')||document.querySelector('#analyst-chat-log');
+ const keepLatestVisible=()=>{if(log)log.scrollTop=log.scrollHeight;};
  const scratch=document.createElement('div');scratch.innerHTML=html;const text=scratch.textContent||'';
  target.textContent='';target.classList.add('streaming');
  const words=text.split(/(\s+)/);let out='';
- for(let i=0;i<words.length;i++){out+=words[i];target.textContent=out;if(i%4===0)await wait(18);}
- target.innerHTML=html;target.classList.remove('streaming');
+ for(let i=0;i<words.length;i++){
+  out+=words[i];
+  target.textContent=out;
+  if(i%4===0){keepLatestVisible();await wait(18);}
+ }
+ target.innerHTML=html;
+ target.classList.remove('streaming');
+ requestAnimationFrame(keepLatestVisible);
 }
 let analystStorageIdentity='';
 function analystWorkspaceIdentity(session=window.__ONTOTRAIL_SESSION||{}){return String(session.email||`${session.tenant||'workspace'}:${session.role||'user'}`).toLowerCase().replace(/[^a-z0-9_-]+/g,'_');}
