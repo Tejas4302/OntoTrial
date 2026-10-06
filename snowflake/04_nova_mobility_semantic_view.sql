@@ -3,7 +3,6 @@
 -- All NOVA_* operational records are SYNTHETIC hackathon data.
 -- Marketplace enrichment columns originate from TradePrism / Pelmorex-derived views.
 
-USE ROLE ACCOUNTADMIN;
 USE WAREHOUSE ONTOTRAIL_WH;
 USE DATABASE ONTOTRAIL;
 USE SCHEMA SUPPLY_CHAIN;
