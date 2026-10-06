@@ -209,7 +209,7 @@ when Analyst and SQL work.
   `GEMINI_MODEL`. This uses `generativelanguage.googleapis.com`, not Vertex.
 - When both keys are set, Vertex takes precedence. A model name alone does not
   enable either provider. OIDC being enabled does not configure Google workload
-  identity federation; this integration supports Express API keys, not WIF.
+  identity federation; OIDC requires the federation settings below.
 - Add keys as sensitive Vercel Production variables and redeploy. Never commit
   credentials, expose them in client variables, or paste them into chat.
 - If synthesis is unavailable, the API returns `answerStatus: evidence_only`
@@ -220,3 +220,22 @@ when Analyst and SQL work.
 
 Vertex Express reference:
 https://cloud.google.com/vertex-ai/generative-ai/docs/start/express-mode/vertex-ai-express-mode-api-reference
+
+
+### Vertex through Vercel OIDC
+
+Production uses `VERTEX_AUTH_MODE=oidc`, which takes precedence over API keys.
+Set `GCP_PROJECT_ID`, `GCP_PROJECT_NUMBER`, `GCP_SERVICE_ACCOUNT_EMAIL`,
+`GCP_WORKLOAD_IDENTITY_POOL_ID`, `GCP_WORKLOAD_IDENTITY_POOL_PROVIDER_ID`,
+`GCP_LOCATION` (global), and `VERTEX_MODEL` on Vercel Production.
+The Google provider must trust the Vercel team issuer and audience and restrict
+`assertion.sub` to the intended project and production environment. Grant that
+subject `roles/iam.workloadIdentityUser` on the service account and grant the
+service account `roles/aiplatform.user` on the Google project.
+
+The backend obtains a current token with `@vercel/oidc`, exchanges it at Google
+STS, impersonates the configured service account, then sends only the supplied
+governed evidence to the project-scoped Vertex endpoint. No JSON key is needed.
+Production builds run a small synthetic evidence prompt through the same helper;
+a failed Google connection blocks deployment and identifies the failing stage.
+This build check verifies Google connectivity, not a signed-in Snowflake chat.

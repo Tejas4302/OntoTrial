@@ -1,3 +1,4 @@
+import {vertexOidcEnabled,vertexOidcRequest} from '../lib/vertex.js';
 import {readSession} from '../lib/auth.js';
 import {DATASET_DOMAINS,classifyQuestion,buildDatasetGuidance,resolveQuestionPlan} from './intelligence-map.js';
 const MAX_QUESTION=500;
@@ -37,11 +38,12 @@ function extractGeminiText(body){
   const parts=(candidates[0]?.content?.parts||[]).filter(part=>!part.thought);
   return parts.map(part=>typeof part?.text==='string'?part.text.trim():'').filter(Boolean).join('\n\n').trim();
 }
-async function geminiSynthesize(input){
+export async function geminiSynthesize(input){
+  const oidc=vertexOidcEnabled();
   const vertexKey=String(process.env.VERTEX_API_KEY||'').trim();
   const apiKey=vertexKey||String(process.env.GEMINI_API_KEY||'').trim();
-  if(!apiKey)return '';
-  const model=String((vertexKey?process.env.VERTEX_MODEL:process.env.GEMINI_MODEL)||'gemini-2.5-flash').trim();
+  if(!oidc&&!apiKey)return '';
+  const model=String(((oidc||vertexKey)?process.env.VERTEX_MODEL:process.env.GEMINI_MODEL)||'gemini-2.5-flash').trim();
   const system=[
     'You are the final response layer for OntoTrail, a governed supply-chain intelligence application.',
     'The Snowflake semantic layer has already selected and executed the governed evidence. Your job is only to explain that evidence clearly.',
@@ -57,12 +59,13 @@ async function geminiSynthesize(input){
   ].join('\n');
 
   // Vertex Express keys and AI Studio keys use separate endpoints.
-  const endpoint=vertexKey
+  const identity=oidc?await vertexOidcRequest(model):null;
+  const endpoint=identity?.endpoint||(vertexKey
     ? 'https://aiplatform.googleapis.com/v1/publishers/google/models/'+encodeURIComponent(model)+':generateContent'
-    : 'https://generativelanguage.googleapis.com/v1beta/models/'+encodeURIComponent(model)+':generateContent';
+    : 'https://generativelanguage.googleapis.com/v1beta/models/'+encodeURIComponent(model)+':generateContent');
   const response=await fetchWithTimeout(endpoint,{
     method:'POST',
-    headers:{
+    headers:identity?.headers||{
       'x-goog-api-key':apiKey,
       'Content-Type':'application/json'
     },
@@ -376,7 +379,7 @@ async function directAnswerFromAnalystEvidence({base,pat,warehouse,semanticView,
   try{
     const external=await geminiSynthesize(synthesisInput);
     if(external&&!looksLikeInterpretationOnly(external)){
-      console.log('[analyst] final answer synthesized',{provider:process.env.VERTEX_API_KEY?'vertex':'gemini',semanticDomain,rows:evidence.rows.length});
+      console.log('[analyst] final answer synthesized',{provider:vertexOidcEnabled()?'vertex-oidc':process.env.VERTEX_API_KEY?'vertex':'gemini',semanticDomain,rows:evidence.rows.length});
       return external;
     }
   }catch(err){

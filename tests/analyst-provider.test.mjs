@@ -4,7 +4,7 @@ import handler from '../api/analyst.js';
 import {makeSession} from '../lib/auth.js';
 
 async function exercise(t,{vertex=false,gemini=false,rejected=false,question='Which origin countries have the highest India import value in 2026?'}={}){
-  for(const [key,value] of Object.entries({ONTOTRAIL_AUTH_SECRET:'test-only',SNOWFLAKE_PAT:'snow-test',SNOWFLAKE_ACCOUNT_URL:'https://test.snowflakecomputing.com',SNOWFLAKE_WAREHOUSE:'TEST',SNOWFLAKE_SEMANTIC_VIEW:'TEST.TRADE.VIEW',SNOWFLAKE_NOVA_SEMANTIC_VIEW:'',ENABLE_CORTEX_LLM_PLANNER:'',VERTEX_API_KEY:vertex?'vertex-test':'',VERTEX_MODEL:'test-model',GEMINI_API_KEY:gemini?'gemini-test':'',GEMINI_MODEL:'test-model'})){
+  for(const [key,value] of Object.entries({VERTEX_AUTH_MODE:'',ONTOTRAIL_AUTH_SECRET:'test-only',SNOWFLAKE_PAT:'snow-test',SNOWFLAKE_ACCOUNT_URL:'https://test.snowflakecomputing.com',SNOWFLAKE_WAREHOUSE:'TEST',SNOWFLAKE_SEMANTIC_VIEW:'TEST.TRADE.VIEW',SNOWFLAKE_NOVA_SEMANTIC_VIEW:'',ENABLE_CORTEX_LLM_PLANNER:'',VERTEX_API_KEY:vertex?'vertex-test':'',VERTEX_MODEL:'test-model',GEMINI_API_KEY:gemini?'gemini-test':'',GEMINI_MODEL:'test-model'})){
     const before=process.env[key];process.env[key]=value;
     t.after(()=>{if(before===undefined)delete process.env[key];else process.env[key]=before;});
   }
