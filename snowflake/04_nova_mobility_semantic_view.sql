@@ -1,7 +1,7 @@
 -- OntoTrail / Nova Mobility India operational semantic view
 -- Requires snowflake/03_nova_mobility_internal_operations.sql
 -- All NOVA_* operational records are SYNTHETIC hackathon data.
--- Marketplace enrichment columns originate from TradePrism / Pelmorex-derived views.
+-- Marketplace enrichment columns originate from TradePrism / The Weather Network For Business-derived views.
 
 USE WAREHOUSE ONTOTRAIL_WH;
 USE DATABASE ONTOTRAIL;
@@ -96,10 +96,11 @@ METRICS (
         COMMENT = 'Average TradePrism sea-dependency percentage across matched supplier/material rows; this is external market context, not Nova shipment share.'
 )
 COMMENT = 'Nova Mobility India synthetic internal operational semantic view enriched with real Snowflake Marketplace trade and weather context.'
-AI_SQL_GENERATION 'Nova Mobility India is a fictional hackathon client. Supplier, material, purchase-order, shipment and inventory records in this semantic view are synthetic. TradePrism and Pelmorex-derived enrichment is real Marketplace intelligence. Never claim the synthetic operational records are real company data. Use PO_ID for purchase-order questions, SUPPLIER_NAME for supplier questions and MATERIAL_NAME for component questions. DAYS_OF_COVER is an internal inventory metric. MARKET_SEA_DEPENDENCY_PCT describes external TradePrism market context and must not be described as Nova Mobility actual shipment-mode share. WEATHER_RISK_LEVEL is based on the OntoTrail heuristic over Pelmorex forecasts. Prefer semantic metrics over re-deriving formulas.'
-AI_QUESTION_CATEGORIZATION 'This semantic view answers Nova Mobility internal operational questions about suppliers, purchase orders, materials, plants, shipments, inventory days of cover, delayed POs and operational risk, with TradePrism and Pelmorex context. For overall India trade totals, country-wide import value or national trade questions, use the India trade-risk semantic view instead.';
+AI_SQL_GENERATION 'Nova Mobility India is a fictional hackathon client. Supplier, material, purchase-order, shipment and inventory records in this semantic view are synthetic. TradePrism and The Weather Network For Business enrichment is real Marketplace intelligence. Never claim the synthetic operational records are real company data. Use PO_ID for purchase-order questions, SUPPLIER_NAME for supplier questions and MATERIAL_NAME for component questions. DAYS_OF_COVER is an internal inventory metric. MARKET_SEA_DEPENDENCY_PCT describes external TradePrism market context and must not be described as Nova Mobility actual shipment-mode share. WEATHER_RISK_LEVEL is based on the OntoTrail heuristic over The Weather Network For Business forecasts. Prefer semantic metrics over re-deriving formulas.'
+AI_QUESTION_CATEGORIZATION 'This semantic view answers Nova Mobility internal operational questions about suppliers, purchase orders, materials, plants, shipments, inventory days of cover, delayed POs and operational risk, with TradePrism and The Weather Network For Business context. For overall India trade totals, country-wide import value or national trade questions, use the India trade-risk semantic view instead.';
 
-GRANT REFERENCES, SELECT ON SEMANTIC VIEW ONTOTRAIL.SUPPLY_CHAIN.ONTOTRAIL_NOVA_MOBILITY_ANALYST TO ROLE ONTOTRAIL_APP_ROLE;
+-- Grant deferred for fresh trial setup. Create ONTOTRAIL_APP_ROLE first, then apply this grant.
+-- GRANT REFERENCES, SELECT ON SEMANTIC VIEW ONTOTRAIL.SUPPLY_CHAIN.ONTOTRAIL_NOVA_MOBILITY_ANALYST TO ROLE ONTOTRAIL_APP_ROLE;
 
 DESC SEMANTIC VIEW ONTOTRAIL.SUPPLY_CHAIN.ONTOTRAIL_NOVA_MOBILITY_ANALYST;
 
